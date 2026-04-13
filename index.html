@@ -272,16 +272,18 @@
             window.closeModal(element);
         }
         
-        // Vietnamese PhuocIT Offline Application  
-        class VietnamesePhuocIT {
+        // Vietnamese MayTinhBK Offline Application
+        class VietnameseMayTinhBK {
             constructor() {
                 this.currentPage = 'dashboard';
+                this.remoteSyncTimer = null;
                 // 🚫 KHÔNG xoá localStorage nữa. Thay vào đó khởi tạo từ dữ liệu đã lưu (nếu có).
                 this.initializeData();
                 this.init();
+                this.syncFromRemoteDatabase();
             }
 initializeData() {
-                const saved = localStorage.getItem('phuocit_data');
+                const saved = localStorage.getItem('maytinhbk_data');
                 if (saved && saved.trim() !== '') {
                     try {
                         this.demoData = JSON.parse(saved);
@@ -337,7 +339,7 @@ initializeData() {
                 const expectedDate = '2025-08-11';
                 
                 // Check if stored data has old dates or wrong date
-                const storedData = localStorage.getItem('phuocit_data');
+                const storedData = localStorage.getItem('maytinhbk_data');
                 if (storedData) {
                     try {
                         const data = JSON.parse(storedData);
@@ -373,7 +375,7 @@ initializeData() {
             }
             
             init() {
-                console.log('Initializing Vietnamese PhuocIT...');
+                console.log('Initializing Vietnamese MayTinhBK...');
                 
                 // Debug: Show current Vietnam time
                 const vietnamTime = this.getVietnamTime();
@@ -399,7 +401,89 @@ initializeData() {
                 
                 // Show date debug info to user
                 this.showNotification(`Hệ thống khởi tạo lúc: ${this.formatVietnameseTime()}`, 'info');
-                console.log('Vietnamese PhuocIT initialized successfully');
+                console.log('Vietnamese MayTinhBK initialized successfully');
+            }
+
+            getRemoteDbConfig() {
+                return {
+                    enabled: localStorage.getItem('remote_db_enabled') === 'true',
+                    apiUrl: (localStorage.getItem('remote_db_url') || '').trim(),
+                    apiToken: (localStorage.getItem('remote_db_token') || '').trim()
+                };
+            }
+
+            getRemoteDbHeaders() {
+                const config = this.getRemoteDbConfig();
+                const headers = { 'Content-Type': 'application/json' };
+                if (config.apiToken) {
+                    headers.Authorization = `Bearer ${config.apiToken}`;
+                }
+                return headers;
+            }
+
+            async syncFromRemoteDatabase() {
+                const config = this.getRemoteDbConfig();
+                if (!config.enabled || !config.apiUrl) return;
+
+                try {
+                    const response = await fetch(`${config.apiUrl}/maytinhbk/data`, {
+                        method: 'GET',
+                        headers: this.getRemoteDbHeaders()
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const payload = await response.json();
+                    const remoteData = payload?.data || payload;
+
+                    if (remoteData && typeof remoteData === 'object' && Array.isArray(remoteData.customers)) {
+                        this.demoData = remoteData;
+                        localStorage.setItem('maytinhbk_data', JSON.stringify(this.demoData));
+                        this.migrateProductData();
+                        this.loadPage(this.currentPage || 'dashboard');
+                        this.showNotification('Đã đồng bộ dữ liệu từ database thật', 'success');
+                    }
+                } catch (error) {
+                    console.error('Remote database sync failed:', error);
+                    this.showNotification('Không thể lấy dữ liệu DB thật, đang dùng dữ liệu local', 'warning');
+                }
+            }
+
+            queueRemoteSave() {
+                const config = this.getRemoteDbConfig();
+                if (!config.enabled || !config.apiUrl) return;
+
+                if (this.remoteSyncTimer) {
+                    clearTimeout(this.remoteSyncTimer);
+                }
+
+                this.remoteSyncTimer = setTimeout(() => {
+                    this.pushDataToRemoteDatabase();
+                }, 700);
+            }
+
+            async pushDataToRemoteDatabase() {
+                const config = this.getRemoteDbConfig();
+                if (!config.enabled || !config.apiUrl) return;
+
+                try {
+                    const response = await fetch(`${config.apiUrl}/maytinhbk/data`, {
+                        method: 'PUT',
+                        headers: this.getRemoteDbHeaders(),
+                        body: JSON.stringify({
+                            data: this.demoData,
+                            updatedAt: this.getVietnamTime().toISOString()
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                } catch (error) {
+                    console.error('Remote save failed:', error);
+                }
             }
             
             generateDemoData() {
@@ -1511,7 +1595,7 @@ initializeData() {
                         position: 'Kỹ thuật viên',
                         specialization: 'Điện tử',
                         phone: '0901234567',
-                        email: 'sample@phuocit.com',
+                        email: 'sample@maytinhbk.com',
                         experience: '1 năm',
                         skills: ['Sửa chữa cơ bản'],
                         certifications: ['Certificate mẫu'],
@@ -2653,7 +2737,7 @@ initializeData() {
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(blob);
-                link.download = `PhuocIT_Service_Repairs_${new Date().toISOString().split('T')[0]}.csv`;
+                link.download = `MayTinhBK_Service_Repairs_${new Date().toISOString().split('T')[0]}.csv`;
                 link.click();
                 
                 this.showNotification('Đã xuất file CSV báo cáo sửa chữa!', 'success');
@@ -3945,6 +4029,7 @@ initializeData() {
                 const lastBackupTime = localStorage.getItem('last_backup_time');
                 const autoBackupEnabled = localStorage.getItem('auto_backup_enabled') === 'true';
                 const backupInterval = localStorage.getItem('backup_interval') || '30';
+                const remoteDbConfig = this.getRemoteDbConfig();
                 
                 return `
                     <div class="fade-in">
@@ -4004,6 +4089,41 @@ initializeData() {
                                     <div style="font-size: 12px; color: #6b7280; text-align: center;">
                                         File được lưu định dạng JSON<br>
                                         Tự động tải về thư mục Downloads
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style="background: white; padding: 20px; border-radius: 12px; border: 2px solid #e5e7eb; margin-top: 20px;">
+                                <h3 style="margin-bottom: 16px; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+                                    <span>🗄️</span> Database thật (API)
+                                </h3>
+                                <div style="display: grid; gap: 12px;">
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                        <input type="checkbox" id="remote-db-enabled" ${remoteDbConfig.enabled ? 'checked' : ''}
+                                               onchange="app.saveRemoteDbSettings()">
+                                        <span>Bật đồng bộ với DB thật</span>
+                                    </label>
+                                    <input id="remote-db-url" type="text" value="${remoteDbConfig.apiUrl}"
+                                           placeholder="VD: https://api.tenmien.com"
+                                           style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;"
+                                           onblur="app.saveRemoteDbSettings()">
+                                    <input id="remote-db-token" type="password" value="${remoteDbConfig.apiToken}"
+                                           placeholder="Bearer token (nếu có)"
+                                           style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;"
+                                           onblur="app.saveRemoteDbSettings()">
+                                    <div style="display: flex; gap: 10px;">
+                                        <button onclick="app.testRemoteDbConnection()"
+                                                style="background: var(--header-gradient); color: white; border: none; border-radius: 6px; padding: 10px 12px; cursor: pointer;">
+                                            Kiểm tra kết nối
+                                        </button>
+                                        <button onclick="app.syncFromRemoteDatabase()"
+                                                style="background: var(--success-gradient); color: white; border: none; border-radius: 6px; padding: 10px 12px; cursor: pointer;">
+                                            Đồng bộ ngay
+                                        </button>
+                                    </div>
+                                    <div style="font-size: 12px; color: #6b7280;">
+                                        Endpoint yêu cầu:
+                                        <code>GET/PUT {API_URL}/maytinhbk/data</code>
                                     </div>
                                 </div>
                             </div>
@@ -4175,7 +4295,7 @@ initializeData() {
                     type: 'info',
                     icon: '🚀',
                     title: 'Khởi động hệ thống',
-                    description: 'Hệ thống PhuocIT đã được khởi động và sẵn sàng hoạt động',
+                    description: 'Hệ thống MayTinhBK đã được khởi động và sẵn sàng hoạt động',
                     time: new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString(),
                     category: 'system'
                 });
@@ -4257,7 +4377,7 @@ initializeData() {
                     <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1001; display: flex; justify-content: center; align-items: center;" onclick="closeModal(this)">
                         <div style="background: white; padding: 32px; border-radius: 16px; width: 500px; max-width: 90vw; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.3); max-height: 90vh; overflow-y: auto;" onclick="event.stopPropagation()">
                             <div style="font-size: 48px; margin-bottom: 16px;">🏪</div>
-                            <h3 style="color: var(--primary-blue); margin-bottom: 20px; font-size: 24px; font-weight: bold;">PhuocIT.com</h3>
+                            <h3 style="color: var(--primary-blue); margin-bottom: 20px; font-size: 24px; font-weight: bold;">MayTinhBK.com</h3>
                             
                             <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
                                 <h4 style="margin-bottom: 12px; font-size: 18px;"> Phiên bản Online Qlbanhang.Vn</h4>
@@ -4272,7 +4392,7 @@ initializeData() {
                             </div>
                             
                             <div style="display: flex; gap: 12px; justify-content: center;">
-                                <a href="https://phuocit.com" target="_blank" style="background: var(--header-gradient); color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
+                                <a href="https://maytinhbk.com" target="_blank" style="background: var(--header-gradient); color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
                                     🌐 Truy cập Website để cập nhật các bản mới nhất
                                 </a>
                                
@@ -5409,11 +5529,12 @@ initializeData() {
             
             // Local Storage Management
             saveToLocalStorage() {
-                localStorage.setItem('phuocit_data', JSON.stringify(this.demoData));
+                localStorage.setItem('maytinhbk_data', JSON.stringify(this.demoData));
+                this.queueRemoteSave();
             }
             
             loadFromLocalStorage() {
-                const saved = localStorage.getItem('phuocit_data');
+                const saved = localStorage.getItem('maytinhbk_data');
                 if (saved) {
                     this.demoData = JSON.parse(saved);
                     console.log('=== FORCE RELOAD FROM LOCALSTORAGE ===');
@@ -5424,6 +5545,44 @@ initializeData() {
                     return true; // Indicate successful load
                 }
                 return false; // No data found
+            }
+
+            saveRemoteDbSettings() {
+                const enabledEl = document.getElementById('remote-db-enabled');
+                const urlEl = document.getElementById('remote-db-url');
+                const tokenEl = document.getElementById('remote-db-token');
+
+                if (!enabledEl || !urlEl || !tokenEl) return;
+
+                localStorage.setItem('remote_db_enabled', enabledEl.checked ? 'true' : 'false');
+                localStorage.setItem('remote_db_url', urlEl.value.trim());
+                localStorage.setItem('remote_db_token', tokenEl.value.trim());
+                this.showNotification('Đã lưu cấu hình database thật', 'success');
+            }
+
+            async testRemoteDbConnection() {
+                this.saveRemoteDbSettings();
+                const config = this.getRemoteDbConfig();
+                if (!config.apiUrl) {
+                    this.showNotification('Vui lòng nhập API URL trước khi kiểm tra', 'warning');
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`${config.apiUrl}/maytinhbk/data`, {
+                        method: 'GET',
+                        headers: this.getRemoteDbHeaders()
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    this.showNotification('Kết nối DB thật thành công', 'success');
+                } catch (error) {
+                    console.error('Test remote DB failed:', error);
+                    this.showNotification('Kết nối thất bại, vui lòng kiểm tra URL/TOKEN', 'error');
+                }
             }
             
             // Backup Management Functions
@@ -5542,7 +5701,7 @@ initializeData() {
             }
             
             calculateStorageSize() {
-                const data = localStorage.getItem('phuocit_data');
+                const data = localStorage.getItem('maytinhbk_data');
                 if (data) {
                     const sizeInBytes = new Blob([data]).size;
                     const sizeInKB = (sizeInBytes / 1024).toFixed(1);
@@ -7470,7 +7629,7 @@ initializeData() {
                     console.log('💾 Data saved to localStorage');
                     
                     // Kiểm tra localStorage ngay sau khi lưu
-                    const savedData = JSON.parse(localStorage.getItem('phuocit_data'));
+                    const savedData = JSON.parse(localStorage.getItem('maytinhbk_data'));
                     const savedCustomer = savedData.customers.find(c => c.id === customerId);
                     console.log(`✅ VERIFIED IN LOCALSTORAGE: ${savedCustomer.name} nợ ${savedCustomer.debt.toLocaleString('vi-VN')} VNĐ`);
                     
@@ -11370,7 +11529,7 @@ initializeData() {
 
                                 <!-- Footer -->
                                 <div class="footer-info">
-                                    <p><strong>Báo cáo được tạo tự động bởi hệ thống PhuocIT</strong></p>
+                                    <p><strong>Báo cáo được tạo tự động bởi hệ thống MayTinhBK</strong></p>
                                     <p>Thời gian tạo: ${this.getVietnamTime().toLocaleString('vi-VN', { 
                                         timeZone: 'Asia/Ho_Chi_Minh',
                                         year: 'numeric',
@@ -12514,7 +12673,7 @@ initializeData() {
                 
                 // Initialize the application with a small delay to ensure DOM is ready
                 setTimeout(() => {
-                    app = new VietnamesePhuocIT();
+                    app = new VietnameseMayTinhBK();
                     window.app = app; // Make app globally accessible
                     // Force setup navigation again to ensure it works
                     setTimeout(() => {
