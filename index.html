@@ -276,9 +276,11 @@
         class VietnamesePhuocIT {
             constructor() {
                 this.currentPage = 'dashboard';
+                this.remoteSyncTimer = null;
                 // 🚫 KHÔNG xoá localStorage nữa. Thay vào đó khởi tạo từ dữ liệu đã lưu (nếu có).
                 this.initializeData();
                 this.init();
+                this.syncFromRemoteDatabase();
             }
 initializeData() {
                 const saved = localStorage.getItem('phuocit_data');
@@ -400,6 +402,88 @@ initializeData() {
                 // Show date debug info to user
                 this.showNotification(`Hệ thống khởi tạo lúc: ${this.formatVietnameseTime()}`, 'info');
                 console.log('Vietnamese PhuocIT initialized successfully');
+            }
+
+            getRemoteDbConfig() {
+                return {
+                    enabled: localStorage.getItem('remote_db_enabled') === 'true',
+                    apiUrl: (localStorage.getItem('remote_db_url') || '').trim(),
+                    apiToken: (localStorage.getItem('remote_db_token') || '').trim()
+                };
+            }
+
+            getRemoteDbHeaders() {
+                const config = this.getRemoteDbConfig();
+                const headers = { 'Content-Type': 'application/json' };
+                if (config.apiToken) {
+                    headers.Authorization = `Bearer ${config.apiToken}`;
+                }
+                return headers;
+            }
+
+            async syncFromRemoteDatabase() {
+                const config = this.getRemoteDbConfig();
+                if (!config.enabled || !config.apiUrl) return;
+
+                try {
+                    const response = await fetch(`${config.apiUrl}/phuocit/data`, {
+                        method: 'GET',
+                        headers: this.getRemoteDbHeaders()
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const payload = await response.json();
+                    const remoteData = payload?.data || payload;
+
+                    if (remoteData && typeof remoteData === 'object' && Array.isArray(remoteData.customers)) {
+                        this.demoData = remoteData;
+                        localStorage.setItem('phuocit_data', JSON.stringify(this.demoData));
+                        this.migrateProductData();
+                        this.loadPage(this.currentPage || 'dashboard');
+                        this.showNotification('Đã đồng bộ dữ liệu từ database thật', 'success');
+                    }
+                } catch (error) {
+                    console.error('Remote database sync failed:', error);
+                    this.showNotification('Không thể lấy dữ liệu DB thật, đang dùng dữ liệu local', 'warning');
+                }
+            }
+
+            queueRemoteSave() {
+                const config = this.getRemoteDbConfig();
+                if (!config.enabled || !config.apiUrl) return;
+
+                if (this.remoteSyncTimer) {
+                    clearTimeout(this.remoteSyncTimer);
+                }
+
+                this.remoteSyncTimer = setTimeout(() => {
+                    this.pushDataToRemoteDatabase();
+                }, 700);
+            }
+
+            async pushDataToRemoteDatabase() {
+                const config = this.getRemoteDbConfig();
+                if (!config.enabled || !config.apiUrl) return;
+
+                try {
+                    const response = await fetch(`${config.apiUrl}/phuocit/data`, {
+                        method: 'PUT',
+                        headers: this.getRemoteDbHeaders(),
+                        body: JSON.stringify({
+                            data: this.demoData,
+                            updatedAt: this.getVietnamTime().toISOString()
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                } catch (error) {
+                    console.error('Remote save failed:', error);
+                }
             }
             
             generateDemoData() {
@@ -3945,6 +4029,7 @@ initializeData() {
                 const lastBackupTime = localStorage.getItem('last_backup_time');
                 const autoBackupEnabled = localStorage.getItem('auto_backup_enabled') === 'true';
                 const backupInterval = localStorage.getItem('backup_interval') || '30';
+                const remoteDbConfig = this.getRemoteDbConfig();
                 
                 return `
                     <div class="fade-in">
@@ -4004,6 +4089,41 @@ initializeData() {
                                     <div style="font-size: 12px; color: #6b7280; text-align: center;">
                                         File được lưu định dạng JSON<br>
                                         Tự động tải về thư mục Downloads
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style="background: white; padding: 20px; border-radius: 12px; border: 2px solid #e5e7eb; margin-top: 20px;">
+                                <h3 style="margin-bottom: 16px; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+                                    <span>🗄️</span> Database thật (API)
+                                </h3>
+                                <div style="display: grid; gap: 12px;">
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                        <input type="checkbox" id="remote-db-enabled" ${remoteDbConfig.enabled ? 'checked' : ''}
+                                               onchange="app.saveRemoteDbSettings()">
+                                        <span>Bật đồng bộ với DB thật</span>
+                                    </label>
+                                    <input id="remote-db-url" type="text" value="${remoteDbConfig.apiUrl}"
+                                           placeholder="VD: https://api.tenmien.com"
+                                           style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;"
+                                           onblur="app.saveRemoteDbSettings()">
+                                    <input id="remote-db-token" type="password" value="${remoteDbConfig.apiToken}"
+                                           placeholder="Bearer token (nếu có)"
+                                           style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;"
+                                           onblur="app.saveRemoteDbSettings()">
+                                    <div style="display: flex; gap: 10px;">
+                                        <button onclick="app.testRemoteDbConnection()"
+                                                style="background: var(--header-gradient); color: white; border: none; border-radius: 6px; padding: 10px 12px; cursor: pointer;">
+                                            Kiểm tra kết nối
+                                        </button>
+                                        <button onclick="app.syncFromRemoteDatabase()"
+                                                style="background: var(--success-gradient); color: white; border: none; border-radius: 6px; padding: 10px 12px; cursor: pointer;">
+                                            Đồng bộ ngay
+                                        </button>
+                                    </div>
+                                    <div style="font-size: 12px; color: #6b7280;">
+                                        Endpoint yêu cầu:
+                                        <code>GET/PUT {API_URL}/phuocit/data</code>
                                     </div>
                                 </div>
                             </div>
@@ -5410,6 +5530,7 @@ initializeData() {
             // Local Storage Management
             saveToLocalStorage() {
                 localStorage.setItem('phuocit_data', JSON.stringify(this.demoData));
+                this.queueRemoteSave();
             }
             
             loadFromLocalStorage() {
@@ -5424,6 +5545,44 @@ initializeData() {
                     return true; // Indicate successful load
                 }
                 return false; // No data found
+            }
+
+            saveRemoteDbSettings() {
+                const enabledEl = document.getElementById('remote-db-enabled');
+                const urlEl = document.getElementById('remote-db-url');
+                const tokenEl = document.getElementById('remote-db-token');
+
+                if (!enabledEl || !urlEl || !tokenEl) return;
+
+                localStorage.setItem('remote_db_enabled', enabledEl.checked ? 'true' : 'false');
+                localStorage.setItem('remote_db_url', urlEl.value.trim());
+                localStorage.setItem('remote_db_token', tokenEl.value.trim());
+                this.showNotification('Đã lưu cấu hình database thật', 'success');
+            }
+
+            async testRemoteDbConnection() {
+                this.saveRemoteDbSettings();
+                const config = this.getRemoteDbConfig();
+                if (!config.apiUrl) {
+                    this.showNotification('Vui lòng nhập API URL trước khi kiểm tra', 'warning');
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`${config.apiUrl}/phuocit/data`, {
+                        method: 'GET',
+                        headers: this.getRemoteDbHeaders()
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    this.showNotification('Kết nối DB thật thành công', 'success');
+                } catch (error) {
+                    console.error('Test remote DB failed:', error);
+                    this.showNotification('Kết nối thất bại, vui lòng kiểm tra URL/TOKEN', 'error');
+                }
             }
             
             // Backup Management Functions
