@@ -380,7 +380,8 @@ initializeData() {
                 // Debug: Show current Vietnam time
                 const vietnamTime = this.getVietnamTime();
                 console.log('🕐 Thời gian Việt Nam hiện tại:', this.formatVietnameseTime());
-                console.log('Sample order date:', this.demoData.orders[0].date);
+                const sampleOrderDate = this.demoData?.orders?.[0]?.date || 'N/A';
+                console.log('Sample order date:', sampleOrderDate);
                 
                 this.setupNavigation();
                 this.setupEventListeners();
