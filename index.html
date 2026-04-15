@@ -283,6 +283,7 @@
                     try {
                         this.demoData = JSON.parse(saved);
                         this.ensureCompanySettingsData();
+                        this.ensureUniqueProductIds();
                         console.log('✅ LOADED EXISTING DATA FROM LOCALSTORAGE');
                         
                         // Migrate data: Thêm minStock cho sản phẩm cũ nếu chưa có
@@ -302,6 +303,7 @@
                 console.log('🆕 NO SAVED DATA - CREATING FRESH DEMO DATA');
                 this.demoData = this.generateDemoData();
                 this.ensureCompanySettingsData();
+                this.ensureUniqueProductIds();
                 this.saveToLocalStorage({ skipRemote: true });
             }
 
@@ -351,6 +353,56 @@
                 } catch (error) {
                     console.warn('Cannot mirror company_settings to localStorage:', error);
                 }
+            }
+
+            ensureUniqueProductIds() {
+                if (!this.demoData || !Array.isArray(this.demoData.products)) return;
+
+                const seenIds = new Set();
+                let renamedCount = 0;
+
+                this.demoData.products.forEach((product) => {
+                    const currentId = String(product.id || '').trim();
+                    const isInvalid = !currentId;
+                    const isDuplicate = !isInvalid && seenIds.has(currentId);
+
+                    if (isInvalid || isDuplicate) {
+                        const newId = this.generateNextProductId(seenIds);
+                        product.id = newId;
+                        seenIds.add(newId);
+                        renamedCount += 1;
+                    } else {
+                        seenIds.add(currentId);
+                    }
+                });
+
+                if (renamedCount > 0) {
+                    console.warn(`⚠️ Đã tự động sửa ${renamedCount} mã sản phẩm bị trùng/rỗng.`);
+                }
+            }
+
+            generateNextProductId(existingIds = null) {
+                const usedIds = existingIds || new Set(
+                    (this.demoData?.products || [])
+                        .map(p => String(p.id || '').trim())
+                        .filter(Boolean)
+                );
+
+                let maxNumeric = 0;
+                usedIds.forEach((id) => {
+                    const match = id.match(/^SP(\d+)$/i);
+                    if (match) {
+                        maxNumeric = Math.max(maxNumeric, parseInt(match[1], 10));
+                    }
+                });
+
+                let candidateNumber = maxNumeric + 1;
+                let candidateId = `SP${String(candidateNumber).padStart(3, '0')}`;
+                while (usedIds.has(candidateId)) {
+                    candidateNumber += 1;
+                    candidateId = `SP${String(candidateNumber).padStart(3, '0')}`;
+                }
+                return candidateId;
             }
 
             // Migrate data để thêm minStock cho sản phẩm cũ
@@ -487,6 +539,7 @@
                     if (remoteData && typeof remoteData === 'object' && Array.isArray(remoteData.customers)) {
                         this.demoData = remoteData;
                         this.ensureCompanySettingsData();
+                        this.ensureUniqueProductIds();
                         localStorage.setItem('maytinhbk_data', JSON.stringify(this.demoData));
                         this.migrateProductData();
                         this.loadPage(this.currentPage || 'dashboard');
@@ -6553,7 +6606,7 @@
                 const formData = new FormData(form);
                 
                 const newProduct = {
-                    id: 'SP' + String(this.demoData.products.length + 1).padStart(3, '0'),
+                    id: this.generateNextProductId(),
                     name: formData.get('name'),
                     category: formData.get('category'),
                     importPrice: parseInt(formData.get('importPrice')),
@@ -7115,7 +7168,7 @@
                 let product = this.demoData.products.find(p => p.name.toLowerCase() === productName.toLowerCase());
                 if (!product) {
                     product = {
-                        id: 'SP' + String(this.demoData.products.length + 1).padStart(3, '0'),
+                        id: this.generateNextProductId(),
                         name: productName,
                         category: 'Nhập mới',
                         price: price,
