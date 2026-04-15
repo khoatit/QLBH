@@ -163,11 +163,6 @@
                 </div>
 
                 <div style="display: flex; gap: 12px; align-items: center;">
-                    <div class="demo-badge" onclick="app.showCompanyInfo()" style="cursor: pointer;">
-                        <span>ℹ️</span>
-                        Giới thiệu
-                    </div>
-
                     <button onclick="if(window.app) { window.app.loadPage('orders'); } else { alert('App chưa sẵn sàng'); }" style="
                         background: var(--primary-blue);
                         color: white;
@@ -4423,37 +4418,6 @@
                 setTimeout(() => {
                     notification.classList.remove('show');
                 }, 3000);
-            }
-            
-            showCompanyInfo() {
-                const infoHTML = `
-                    <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1001; display: flex; justify-content: center; align-items: center;" onclick="closeModal(this)">
-                        <div style="background: white; padding: 32px; border-radius: 16px; width: 500px; max-width: 90vw; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.3); max-height: 90vh; overflow-y: auto;" onclick="event.stopPropagation()">
-                            <div style="font-size: 48px; margin-bottom: 16px;">🏪</div>
-                            <h3 style="color: var(--primary-blue); margin-bottom: 20px; font-size: 24px; font-weight: bold;">MayTinhBK.com</h3>
-                            
-                            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
-                                <h4 style="margin-bottom: 12px; font-size: 18px;"> Phiên bản Online Qlbanhang.Vn</h4>
-								<h4 style="margin-bottom: 12px; font-size: 18px;"> Phiên bản Web Offline Banhang24h.vn</h4>								
-                                <p style="margin-bottom: 0; font-size: 16px; line-height: 1.4;">Phần mềm được chia sẻ miễn phí ( Phiên bản P6 )</p>
-                            </div>
-                            
-                            <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid var(--success-color);">
-                                <p style="margin: 0; color: #374151; line-height: 1.5;">
-                                    💡 Nếu cần bổ sung tính năng hoặc cá nhân hóa có thể liên hệ để được hỗ trợ tốt nhất.
-                                </p>
-                            </div>
-                            
-                            <div style="display: flex; gap: 12px; justify-content: center;">
-                                <a href="https://maytinhbk.com" target="_blank" style="background: var(--header-gradient); color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
-                                    🌐 Truy cập Website để cập nhật các bản mới nhất
-                                </a>
-                               
-                            </div>
-                        </div>
-                    </div>
-                `;
-                document.body.insertAdjacentHTML('beforeend', infoHTML);
             }
             
             // Customer Management Functions
