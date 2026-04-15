@@ -8946,12 +8946,13 @@
                 const dropdown = element.closest('.custom-dropdown');
                 const dropdownList = dropdown.querySelector('.dropdown-list');
                 const arrow = dropdown.querySelector('.dropdown-arrow');
+                const wasOpen = dropdownList.style.display === 'block';
                 
                 // Close other dropdowns
                 this.closeAllDropdowns();
                 
                 // Toggle current dropdown
-                if (dropdownList.style.display === 'none' || !dropdownList.style.display) {
+                if (!wasOpen) {
                     dropdownList.style.display = 'block';
                     arrow.style.transform = 'rotate(180deg)';
                     
@@ -8968,12 +8969,13 @@
                 const dropdown = element.closest('.custom-dropdown');
                 const dropdownList = dropdown.querySelector('.dropdown-list');
                 const arrow = dropdown.querySelector('.dropdown-arrow');
+                const wasOpen = dropdownList.style.display === 'block';
                 
                 // Close other dropdowns
                 this.closeAllDropdowns();
                 
                 // Toggle current dropdown
-                if (dropdownList.style.display === 'none' || !dropdownList.style.display) {
+                if (!wasOpen) {
                     dropdownList.style.display = 'block';
                     arrow.style.transform = 'rotate(180deg)';
                     
@@ -10232,17 +10234,35 @@
 
                 // Add to demo data
                 this.demoData.customers.push(newCustomer);
+                this.saveToLocalStorage();
 
-                // Update customer select in the current form
-                const customerSelect = document.getElementById('customer-select');
-                if (customerSelect) {
-                    const newOption = document.createElement('option');
-                    newOption.value = newCustomer.id;
-                    newOption.textContent = `${newCustomer.name} - ${newCustomer.phone}`;
-                    customerSelect.appendChild(newOption);
-                    
-                    // Select the newly added customer
-                    customerSelect.value = newCustomer.id;
+                // Update customer dropdown in the create-order form
+                const customerDropdown = document.querySelector('.custom-dropdown input[name="customer"]')?.closest('.custom-dropdown');
+                if (customerDropdown) {
+                    const dropdownOptions = customerDropdown.querySelector('.dropdown-options');
+                    if (dropdownOptions) {
+                        const option = document.createElement('div');
+                        option.className = 'dropdown-option';
+                        option.setAttribute('data-value', newCustomer.id);
+                        option.style.cssText = 'padding: 10px; cursor: pointer; border-bottom: 1px solid #f3f4f6;';
+                        option.onmouseover = function () { this.style.background = '#f3f4f6'; };
+                        option.onmouseout = function () { this.style.background = 'white'; };
+                        option.textContent = `${newCustomer.name} - ${newCustomer.phone}`;
+                        option.addEventListener('click', () => {
+                            this.selectCustomer(option, newCustomer.id, `${newCustomer.name} - ${newCustomer.phone}`);
+                        });
+                        dropdownOptions.prepend(option);
+                    }
+
+                    const selectedText = customerDropdown.querySelector('.selected-text');
+                    const hiddenInput = customerDropdown.querySelector('input[name="customer"]');
+                    if (selectedText) {
+                        selectedText.textContent = `${newCustomer.name} - ${newCustomer.phone}`;
+                        selectedText.style.color = '#374151';
+                    }
+                    if (hiddenInput) {
+                        hiddenInput.value = newCustomer.id;
+                    }
                 }
 
                 // Close the modal
