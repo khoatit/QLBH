@@ -1876,7 +1876,7 @@
                 ).join('');
 
                 const formHTML = `
-                    <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1001; display: flex; justify-content: center; align-items: center;" onclick="closeModal(this)">
+                    <div id="createRepairModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1001; display: flex; justify-content: center; align-items: center;" onclick="closeModal(this)">
                         <div style="background: white; padding: 32px; border-radius: 12px; width: 700px; max-width: 90vw; max-height: 80vh; overflow-y: auto;" onclick="event.stopPropagation()">
                             <h3 style="margin: 0 0 24px 0; color: #1f2937; font-size: 20px;">Tạo phiếu sửa chữa mới</h3>
                             
@@ -2013,7 +2013,7 @@
                                 </div>
 
                                 <div style="display: flex; gap: 12px; justify-content: flex-end;">
-                                    <button type="button" onclick="closeModal(this.closest('div[style*=\"fixed\"]'))" style="padding: 10px 20px; border: 1px solid #d1d5db; background: white; border-radius: 6px; cursor: pointer;">Hủy</button>
+                                    <button type="button" onclick="app.closeCreateRepairModal()" style="padding: 10px 20px; border: 1px solid #d1d5db; background: white; border-radius: 6px; cursor: pointer;">Hủy</button>
                                     <button type="submit" style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer;">Tạo phiếu</button>
                                 </div>
                             </form>
@@ -2030,6 +2030,15 @@
                 setTimeout(() => {
                     this.updateTotalCost();
                 }, 100);
+            }
+
+            closeCreateRepairModal() {
+                const modal = document.getElementById('createRepairModal');
+                if (modal) {
+                    modal.remove();
+                    return;
+                }
+                closeModal();
             }
             
             addSparePart() {
