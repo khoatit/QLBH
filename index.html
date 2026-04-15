@@ -6625,7 +6625,7 @@ initializeData() {
 
             // Helper function để tạo category options với selected
             getCategoryOptionsWithSelected(selectedCategory) {
-                const categories = JSON.parse(localStorage.getItem('categories')) || [];
+                const categories = this.getCategoriesList();
                 let options = '<option value="">Chọn danh mục</option>';
                 
                 categories.forEach(category => {
@@ -7083,9 +7083,8 @@ initializeData() {
             }
             
             // Categories Management
-            getCategoriesContent() {
-                // Get categories from localStorage or initialize default ones
-                const categories = JSON.parse(localStorage.getItem('categories')) || [
+            getDefaultCategories() {
+                return [
                     { id: 'cat1', name: 'Điện thoại', parent: null, level: 0 },
                     { id: 'cat2', name: 'Laptop', parent: null, level: 0 },
                     { id: 'cat3', name: 'Tablet', parent: null, level: 0 },
@@ -7094,6 +7093,29 @@ initializeData() {
                     { id: 'cat6', name: 'Bóng đá', parent: 'cat5', level: 1 },
                     { id: 'cat7', name: 'Pickle Ball', parent: 'cat5', level: 1 }
                 ];
+            }
+
+            getCategoriesList() {
+                if (!Array.isArray(this.demoData.categories) || this.demoData.categories.length === 0) {
+                    const legacyCategories = JSON.parse(localStorage.getItem('categories') || 'null');
+                    this.demoData.categories = Array.isArray(legacyCategories) && legacyCategories.length
+                        ? legacyCategories
+                        : this.getDefaultCategories();
+                    localStorage.removeItem('categories');
+                    this.saveToLocalStorage({ skipRemote: true });
+                }
+
+                return this.demoData.categories;
+            }
+
+            saveCategoriesList(categories) {
+                this.demoData.categories = categories;
+                localStorage.removeItem('categories');
+                this.saveToLocalStorage();
+            }
+
+            getCategoriesContent() {
+                const categories = this.getCategoriesList();
 
                 const categoryTree = this.buildCategoryTree(categories);
                 
@@ -7217,7 +7239,7 @@ initializeData() {
             }
 
             showAddSubCategoryForm() {
-                const categories = JSON.parse(localStorage.getItem('categories')) || [];
+                const categories = this.getCategoriesList();
                 const parentCategories = categories.filter(c => c.parent === null);
                 const parentOptions = parentCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
                 
@@ -7256,7 +7278,7 @@ initializeData() {
                 const formData = new FormData(form);
                 const categoryName = formData.get('categoryName');
                 
-                const categories = JSON.parse(localStorage.getItem('categories')) || [];
+                const categories = this.getCategoriesList();
                 const newCategory = {
                     id: 'cat' + Date.now(),
                     name: categoryName,
@@ -7265,7 +7287,7 @@ initializeData() {
                 };
                 
                 categories.push(newCategory);
-                localStorage.setItem('categories', JSON.stringify(categories));
+                this.saveCategoriesList(categories);
                 
                 this.showNotification(`Đã thêm danh mục "${categoryName}"`, 'success');
                 this.loadPage('categories');
@@ -7279,7 +7301,7 @@ initializeData() {
                 const categoryName = formData.get('categoryName');
                 const parentId = formData.get('parentCategory');
                 
-                const categories = JSON.parse(localStorage.getItem('categories')) || [];
+                const categories = this.getCategoriesList();
                 const newCategory = {
                     id: 'cat' + Date.now(),
                     name: categoryName,
@@ -7288,7 +7310,7 @@ initializeData() {
                 };
                 
                 categories.push(newCategory);
-                localStorage.setItem('categories', JSON.stringify(categories));
+                this.saveCategoriesList(categories);
                 
                 this.showNotification(`Đã thêm danh mục con "${categoryName}"`, 'success');
                 this.loadPage('categories');
@@ -7296,7 +7318,7 @@ initializeData() {
             }
 
             editCategory(categoryId) {
-                const categories = JSON.parse(localStorage.getItem('categories')) || [];
+                const categories = this.getCategoriesList();
                 const category = categories.find(c => c.id === categoryId);
                 
                 if (!category) {
@@ -7332,12 +7354,12 @@ initializeData() {
                 const formData = new FormData(form);
                 const categoryName = formData.get('categoryName');
                 
-                const categories = JSON.parse(localStorage.getItem('categories')) || [];
+                const categories = this.getCategoriesList();
                 const categoryIndex = categories.findIndex(c => c.id === categoryId);
                 
                 if (categoryIndex !== -1) {
                     categories[categoryIndex].name = categoryName;
-                    localStorage.setItem('categories', JSON.stringify(categories));
+                    this.saveCategoriesList(categories);
                     
                     this.showNotification(`Đã cập nhật danh mục "${categoryName}"`, 'success');
                     this.loadPage('categories');
@@ -7351,29 +7373,16 @@ initializeData() {
             deleteCategory(categoryId) {
                 if (!confirm('Bạn có chắc chắn muốn xóa danh mục này?')) return;
                 
-                const categories = JSON.parse(localStorage.getItem('categories')) || [];
+                const categories = this.getCategoriesList();
                 const updatedCategories = categories.filter(c => c.id !== categoryId && c.parent !== categoryId);
-                localStorage.setItem('categories', JSON.stringify(updatedCategories));
+                this.saveCategoriesList(updatedCategories);
                 
                 this.showNotification('Đã xóa danh mục', 'success');
                 this.loadPage('categories');
             }
 
             getCategoryOptions() {
-                const categories = JSON.parse(localStorage.getItem('categories')) || [
-                    { id: 'cat1', name: 'Điện thoại', parent: null, level: 0 },
-                    { id: 'cat2', name: 'Laptop', parent: null, level: 0 },
-                    { id: 'cat3', name: 'Tablet', parent: null, level: 0 },
-                    { id: 'cat4', name: 'Phụ kiện', parent: null, level: 0 },
-                    { id: 'cat5', name: 'Sản phẩm', parent: null, level: 0 },
-                    { id: 'cat6', name: 'Bóng đá', parent: 'cat5', level: 1 },
-                    { id: 'cat7', name: 'Pickle Ball', parent: 'cat5', level: 1 }
-                ];
-                
-                // Save default categories if not exist
-                if (!localStorage.getItem('categories')) {
-                    localStorage.setItem('categories', JSON.stringify(categories));
-                }
+                const categories = this.getCategoriesList();
                 
                 let options = '<option value="">Chọn danh mục</option>';
                 
