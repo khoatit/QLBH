@@ -282,11 +282,12 @@
                 this.init();
                 this.syncFromRemoteDatabase();
             }
-initializeData() {
+            initializeData() {
                 const saved = localStorage.getItem('maytinhbk_data');
                 if (saved && saved.trim() !== '') {
                     try {
                         this.demoData = JSON.parse(saved);
+                        this.ensureCompanySettingsData();
                         console.log('✅ LOADED EXISTING DATA FROM LOCALSTORAGE');
                         
                         // Migrate data: Thêm minStock cho sản phẩm cũ nếu chưa có
@@ -305,7 +306,57 @@ initializeData() {
                 // Chỉ tạo demo data nếu localStorage hoàn toàn trống
                 console.log('🆕 NO SAVED DATA - CREATING FRESH DEMO DATA');
                 this.demoData = this.generateDemoData();
-                this.saveToLocalStorage();
+                this.ensureCompanySettingsData();
+                this.saveToLocalStorage({ skipRemote: true });
+            }
+
+            ensureCompanySettingsData() {
+                if (!this.demoData || typeof this.demoData !== 'object') return;
+                if (!this.demoData.companySettings || typeof this.demoData.companySettings !== 'object') {
+                    this.demoData.companySettings = {};
+                }
+
+                const legacySettingsRaw = localStorage.getItem('company_settings');
+                const legacyLogo = localStorage.getItem('company_logo');
+                const legacyQr = localStorage.getItem('company_qr');
+
+                if (Object.keys(this.demoData.companySettings).length === 0 && legacySettingsRaw) {
+                    try {
+                        const legacySettings = JSON.parse(legacySettingsRaw);
+                        if (legacySettings && typeof legacySettings === 'object') {
+                            this.demoData.companySettings = { ...legacySettings };
+                        }
+                    } catch (error) {
+                        console.error('Cannot parse legacy company settings:', error);
+                    }
+                }
+
+                if (legacyLogo && !this.demoData.companySettings.logo) {
+                    this.demoData.companySettings.logo = legacyLogo;
+                }
+                if (legacyQr && !this.demoData.companySettings.qrCode) {
+                    this.demoData.companySettings.qrCode = legacyQr;
+                }
+
+                this.syncCompanySettingsLegacyStorage();
+            }
+
+            syncCompanySettingsLegacyStorage() {
+                const settings = this.demoData?.companySettings && typeof this.demoData.companySettings === 'object'
+                    ? this.demoData.companySettings
+                    : {};
+
+                localStorage.setItem('company_settings', JSON.stringify(settings));
+                if (settings.logo) {
+                    localStorage.setItem('company_logo', settings.logo);
+                } else {
+                    localStorage.removeItem('company_logo');
+                }
+                if (settings.qrCode) {
+                    localStorage.setItem('company_qr', settings.qrCode);
+                } else {
+                    localStorage.removeItem('company_qr');
+                }
             }
 
             // Migrate data để thêm minStock cho sản phẩm cũ
@@ -441,6 +492,7 @@ initializeData() {
 
                     if (remoteData && typeof remoteData === 'object' && Array.isArray(remoteData.customers)) {
                         this.demoData = remoteData;
+                        this.ensureCompanySettingsData();
                         localStorage.setItem('maytinhbk_data', JSON.stringify(this.demoData));
                         this.migrateProductData();
                         this.loadPage(this.currentPage || 'dashboard');
@@ -505,7 +557,8 @@ initializeData() {
                     sales: this.generateSalesWithCurrentDate(),
                     serviceRepairs: this.generateServiceRepairsWithCurrentDate(),
                     spareParts: this.generateSpareParts(),
-                    technicians: this.generateTechnicians()
+                    technicians: this.generateTechnicians(),
+                    companySettings: {}
                 };
             }
 
@@ -5529,8 +5582,10 @@ initializeData() {
             }
             
             // Local Storage Management
-            saveToLocalStorage() {
+            saveToLocalStorage(options = {}) {
                 localStorage.setItem('maytinhbk_data', JSON.stringify(this.demoData));
+                this.syncCompanySettingsLegacyStorage();
+                if (options.skipRemote) return;
                 this.queueRemoteSave();
             }
             
@@ -5742,29 +5797,53 @@ initializeData() {
                     return;
                 }
                 
-                // Save to localStorage
-                localStorage.setItem('company_settings', JSON.stringify(companySettings));
+                this.persistCompanySettings(companySettings);
                 this.showNotification('Đã lưu thông tin công ty thành công! Thông tin này sẽ hiển thị trên hóa đơn in ra.', 'success');
                 
                 console.log('💾 Company settings saved:', companySettings);
             }
+
+            persistCompanySettings(companySettings, options = {}) {
+                if (!this.demoData || typeof this.demoData !== 'object') {
+                    this.demoData = this.generateDemoData();
+                }
+                this.ensureCompanySettingsData();
+
+                const existingSettings = this.demoData.companySettings || {};
+                this.demoData.companySettings = {
+                    ...existingSettings,
+                    ...(companySettings || {})
+                };
+
+                this.saveToLocalStorage({ skipRemote: options.skipRemote === true });
+            }
             
             resetCompanySettings() {
                 if (confirm('Bạn có chắc chắn muốn xóa tất cả thông tin công ty đã lưu?')) {
-                    localStorage.removeItem('company_settings');
+                    this.persistCompanySettings({
+                        companyName: '',
+                        taxCode: '',
+                        address: '',
+                        phone: '',
+                        email: '',
+                        representative: '',
+                        position: '',
+                        description: '',
+                        logo: null,
+                        qrCode: null,
+                        updatedAt: this.getVietnamTime().toISOString()
+                    });
                     this.showNotification('Đã xóa thông tin công ty', 'success');
                     
                     // Reload settings page to show empty form
-                    this.loadPage('settings');
+                    this.loadPage('company-info');
                 }
             }
             
             getCompanySettings() {
                 try {
-                    const settings = localStorage.getItem('company_settings');
-                    if (!settings) return {};
-                    
-                    const parsed = JSON.parse(settings);
+                    this.ensureCompanySettingsData();
+                    const parsed = this.demoData?.companySettings || {};
                     
                     // Validate that logo and QR data exist
                     console.log('Loading company settings...');
@@ -5896,9 +5975,10 @@ initializeData() {
                     
                     // Lưu vào global variable
                     window.companyAssets.logo = imageData;
-                    
-                    // ✅ LƯU VÀO LOCALSTORAGE - KHÔNG MẤT KHI F5
-                    localStorage.setItem('company_logo', imageData);
+                    const companySettings = this.getCompanySettings();
+                    companySettings.logo = imageData;
+                    companySettings.updatedAt = this.getVietnamTime().toISOString();
+                    this.persistCompanySettings(companySettings);
                     
                     // Update display ngay lập tức
                     const logoDisplay = document.getElementById('logo-display');
@@ -5925,9 +6005,10 @@ initializeData() {
                     
                     // Lưu vào global variable
                     window.companyAssets.qr = imageData;
-                    
-                    // ✅ LƯU VÀO LOCALSTORAGE - KHÔNG MẤT KHI F5
-                    localStorage.setItem('company_qr', imageData);
+                    const companySettings = this.getCompanySettings();
+                    companySettings.qrCode = imageData;
+                    companySettings.updatedAt = this.getVietnamTime().toISOString();
+                    this.persistCompanySettings(companySettings);
                     
                     // Update display ngay lập tức
                     const qrDisplay = document.getElementById('qr-display');
@@ -5972,10 +6053,9 @@ initializeData() {
                     
                     // Save with error handling
                     try {
-                        localStorage.setItem('company_settings', JSON.stringify(companySettings));
-                        // Double check save
-                        const testSave = localStorage.getItem('company_settings');
-                        if (testSave && JSON.parse(testSave).logo) {
+                        this.persistCompanySettings(companySettings);
+                        const testSave = this.getCompanySettings();
+                        if (testSave && testSave.logo) {
                             console.log('Logo successfully saved to localStorage');
                         } else {
                             throw new Error('Save verification failed');
@@ -6024,7 +6104,8 @@ initializeData() {
                 // Remove logo from company settings
                 const companySettings = this.getCompanySettings();
                 delete companySettings.logo;
-                localStorage.setItem('company_settings', JSON.stringify(companySettings));
+                companySettings.updatedAt = this.getVietnamTime().toISOString();
+                this.persistCompanySettings(companySettings);
                 
                 // Update display
                 const logoDisplay = document.getElementById('logo-display');
@@ -6071,7 +6152,8 @@ initializeData() {
                 
                 // Save QR URL to company settings
                 companySettings.qrCode = qrURL;
-                localStorage.setItem('company_settings', JSON.stringify(companySettings));
+                companySettings.updatedAt = this.getVietnamTime().toISOString();
+                this.persistCompanySettings(companySettings);
                 
                 // Debug log
                 console.log('QR saved to localStorage:', !!companySettings.qrCode);
@@ -6126,10 +6208,9 @@ initializeData() {
                     
                     // Save with error handling
                     try {
-                        localStorage.setItem('company_settings', JSON.stringify(companySettings));
-                        // Double check save
-                        const testSave = localStorage.getItem('company_settings');
-                        if (testSave && JSON.parse(testSave).qrCode) {
+                        this.persistCompanySettings(companySettings);
+                        const testSave = this.getCompanySettings();
+                        if (testSave && testSave.qrCode) {
                             console.log('QR successfully saved to localStorage');
                         } else {
                             throw new Error('QR save verification failed');
@@ -6161,7 +6242,8 @@ initializeData() {
                 // Remove QR from company settings
                 const companySettings = this.getCompanySettings();
                 delete companySettings.qrCode;
-                localStorage.setItem('company_settings', JSON.stringify(companySettings));
+                companySettings.updatedAt = this.getVietnamTime().toISOString();
+                this.persistCompanySettings(companySettings);
                 
                 // Update display
                 const qrDisplay = document.getElementById('qr-display');
