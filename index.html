@@ -12799,16 +12799,16 @@
             const overlay = document.getElementById('mobileOverlay');
             
             if (sidebar && overlay) {
-                const isOpen = sidebar.classList.contains('mobile-open');
+                const isOpen = sidebar.classList.contains('open');
                 
                 if (isOpen) {
                     // Close menu
-                    sidebar.classList.remove('mobile-open');
-                    overlay.classList.remove('active');
+                    sidebar.classList.remove('open');
+                    overlay.classList.remove('show');
                 } else {
                     // Open menu
-                    sidebar.classList.add('mobile-open');
-                    overlay.classList.add('active');
+                    sidebar.classList.add('open');
+                    overlay.classList.add('show');
                 }
             }
         }
@@ -12822,8 +12822,8 @@
                     const sidebar = document.getElementById('sidebar');
                     const overlay = document.getElementById('mobileOverlay');
                     if (sidebar && overlay) {
-                        sidebar.classList.remove('mobile-open');
-                        overlay.classList.remove('active');
+                        sidebar.classList.remove('open');
+                        overlay.classList.remove('show');
                     }
                 });
             });
@@ -12836,8 +12836,8 @@
                 // Close mobile menu on larger screens
                 if (window.innerWidth > 768) {
                     if (sidebar && overlay) {
-                        sidebar.classList.remove('mobile-open');
-                        overlay.classList.remove('active');
+                        sidebar.classList.remove('open');
+                        overlay.classList.remove('show');
                     }
                 }
             });
