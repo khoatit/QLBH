@@ -346,16 +346,15 @@
                     ? this.demoData.companySettings
                     : {};
 
-                localStorage.setItem('company_settings', JSON.stringify(settings));
-                if (settings.logo) {
-                    localStorage.setItem('company_logo', settings.logo);
-                } else {
-                    localStorage.removeItem('company_logo');
-                }
-                if (settings.qrCode) {
-                    localStorage.setItem('company_qr', settings.qrCode);
-                } else {
-                    localStorage.removeItem('company_qr');
+                // Chỉ mirror phần text để tránh vượt quá quota localStorage khi logo/QR lớn.
+                const legacySettings = { ...settings };
+                delete legacySettings.logo;
+                delete legacySettings.qrCode;
+
+                try {
+                    localStorage.setItem('company_settings', JSON.stringify(legacySettings));
+                } catch (error) {
+                    console.warn('Cannot mirror company_settings to localStorage:', error);
                 }
             }
 
@@ -5583,8 +5582,13 @@
             
             // Local Storage Management
             saveToLocalStorage(options = {}) {
-                localStorage.setItem('maytinhbk_data', JSON.stringify(this.demoData));
-                this.syncCompanySettingsLegacyStorage();
+                try {
+                    localStorage.setItem('maytinhbk_data', JSON.stringify(this.demoData));
+                    this.syncCompanySettingsLegacyStorage();
+                } catch (error) {
+                    console.warn('Cannot save full payload to localStorage, will still try remote sync:', error);
+                    this.showNotification('Dữ liệu ảnh quá lớn, app sẽ ưu tiên đồng bộ DB thật', 'warning');
+                }
                 if (options.skipRemote) return;
                 this.queueRemoteSave();
             }
