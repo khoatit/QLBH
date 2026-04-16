@@ -1874,6 +1874,9 @@
                 const sparePartsOptions = this.demoData.spareParts.map(part => 
                     `<option value="${part.id}" data-price="${part.price}">${part.name} - ${part.price.toLocaleString('vi-VN')} ₫</option>`
                 ).join('');
+                const technicianOptions = (this.demoData.technicians || []).map(tech =>
+                    `<option value="${tech.name}">${tech.name}${tech.position ? ' - ' + tech.position : ''}</option>`
+                ).join('');
 
                 const formHTML = `
                     <div id="createRepairModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1001; display: flex; justify-content: center; align-items: center;" onclick="closeModal(this)">
@@ -1951,7 +1954,10 @@
                                     </div>
                                     <div>
                                         <label style="display: block; margin-bottom: 6px; font-weight: 600;">Kỹ thuật viên</label>
-                                        <input type="text" name="technician" placeholder="Tên kỹ thuật viên" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
+                                        <select name="technician" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
+                                            <option value="">Chưa phân công</option>
+                                            ${technicianOptions}
+                                        </select>
                                     </div>
                                 </div>
 
@@ -2791,6 +2797,10 @@
                 const priorityOptions = ['Thấp', 'Trung bình', 'Cao'].map(priority =>
                     `<option value="${priority}" ${priority === repair.priority ? 'selected' : ''}>${priority}</option>`
                 ).join('');
+                const technicianExists = (this.demoData.technicians || []).some(tech => tech.name === repair.technician);
+                const technicianOptions = (this.demoData.technicians || []).map(tech =>
+                    `<option value="${tech.name}" ${tech.name === repair.technician ? 'selected' : ''}>${tech.name}${tech.position ? ' - ' + tech.position : ''}</option>`
+                ).join('');
 
                 const formHTML = `
                     <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1001; display: flex; justify-content: center; align-items: center;" onclick="closeModal(this)">
@@ -2843,7 +2853,11 @@
                                     </div>
                                     <div>
                                         <label style="display: block; margin-bottom: 6px; font-weight: 600;">Kỹ thuật viên</label>
-                                        <input type="text" name="technician" value="${repair.technician}" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
+                                        <select name="technician" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
+                                            <option value="">Chưa phân công</option>
+                                            ${repair.technician && !technicianExists ? `<option value="${repair.technician}" selected>${repair.technician}</option>` : ''}
+                                            ${technicianOptions}
+                                        </select>
                                     </div>
                                 </div>
 
