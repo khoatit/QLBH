@@ -2513,6 +2513,7 @@
                 if (!repair) return;
 
                 const customer = this.demoData.customers.find(c => c.id === repair.customerId);
+                const companySettings = this.getCompanySettings();
                 
                 // Tạo nội dung in phiếu
                 const printContent = `
@@ -2524,7 +2525,7 @@
                         <style>
                             @media print {
                                 @page {
-                                    margin: 15mm;
+                                    margin: 10mm;
                                     size: A4;
                                 }
                                 body { margin: 0; }
@@ -2539,20 +2540,28 @@
                                 padding: 15px;
                             }
                             .header {
-                                text-align: center;
                                 border-bottom: 2px solid #2563eb;
                                 padding-bottom: 12px;
                                 margin-bottom: 20px;
+                                display: grid;
+                                grid-template-columns: 120px 1fr 120px;
+                                gap: 12px;
+                                align-items: center;
+                            }
+                            .header-logo, .header-qr {
+                                text-align: center;
                             }
                             .company-name {
                                 font-size: 18px;
                                 font-weight: bold;
                                 color: #2563eb;
                                 margin-bottom: 3px;
+                                text-align: center;
                             }
                             .company-info {
                                 font-size: 10px;
                                 color: #666;
+                                text-align: center;
                             }
                             .repair-title {
                                 font-size: 16px;
@@ -2635,18 +2644,30 @@
                                 border-top: 1px solid #333;
                                 font-size: 11px;
                             }
-                            .print-date {
-                                text-align: right;
-                                font-size: 10px;
-                                color: #666;
-                                margin-top: 20px;
-                            }
                         </style>
                     </head>
                     <body>
-                        
-
-                        <div class="repair-title">PHIẾU SỬA CHỮA ${repair.id}</div>
+                        <div class="header">
+                            <div class="header-logo">
+                                ${companySettings.logo
+                                    ? `<img src="${companySettings.logo}" alt="Logo" style="max-width: 100px; max-height: 100px; object-fit: contain;">`
+                                    : '<div style="color:#cbd5e1; font-size:12px;">Logo</div>'}
+                            </div>
+                            <div>
+                                <div class="company-name">${companySettings.companyName || 'CỬA HÀNG'}</div>
+                                <div class="company-info">
+                                    ${companySettings.address || ''}<br>
+                                    Điện thoại: ${companySettings.phone || ''}${companySettings.email ? ' | Email: ' + companySettings.email : ''}<br>
+                                    ${companySettings.taxCode ? 'MST: ' + companySettings.taxCode : ''}
+                                </div>
+                                <div class="repair-title">PHIẾU SỬA CHỮA</div>
+                            </div>
+                            <div class="header-qr">
+                                ${companySettings.qrCode
+                                    ? `<img src="${companySettings.qrCode}" alt="QR Code" style="max-width: 100px; max-height: 100px; object-fit: contain;">`
+                                    : '<div style="color:#cbd5e1; font-size:12px;">QR</div>'}
+                            </div>
+                        </div>
 
                         <div class="info-grid">
                             <div>
@@ -2685,6 +2706,10 @@
                                 <div class="info-item">
                                     <span class="info-label">Ngày tiếp nhận:</span>
                                     ${new Date(repair.date).toLocaleDateString('vi-VN')} ${repair.time}
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Mã phiếu:</span>
+                                    ${repair.id}
                                 </div>
                                 <div class="info-item">
                                     <span class="info-label">Trạng thái:</span>
@@ -2761,10 +2786,6 @@
                                 <div><strong>Kỹ thuật viên</strong></div>
                                 <div style="font-size: 12px; margin-top: 5px;">(Ký và ghi rõ họ tên)</div>
                             </div>
-                        </div>
-
-                        <div class="print-date">
-                            Ngày in: ${new Date().toLocaleDateString('vi-VN')} ${new Date().toLocaleTimeString('vi-VN')}
                         </div>
                     </body>
                     </html>
