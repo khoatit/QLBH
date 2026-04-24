@@ -481,8 +481,9 @@
                 console.log('Sample order date:', sampleOrderDate);
                 
                 this.setupNavigation();
+                this.applyUserPermissions();
                 this.setupEventListeners();
-                this.loadPage('dashboard');
+                this.loadPage(this.getFirstAllowedPage());
                 
                 // Khởi tạo filter state cho báo cáo
                 this.initFilterState();
@@ -786,10 +787,39 @@
                     item.addEventListener('click', (e) => {
                         e.preventDefault();
                         const page = item.getAttribute('data-page');
+                        if (!this.hasPageAccess(page)) {
+                            this.showNotification('Bạn không có quyền truy cập chức năng này', 'warning');
+                            return;
+                        }
                         console.log('Navigation clicked:', page);
                         this.loadPage(page);
                         this.setActiveNav(item);
                     });
+                });
+            }
+
+            hasPageAccess(pageName) {
+                const user = window.currentSessionUser;
+                if (!user || !Array.isArray(user.permissions)) return false;
+                if (user.permissions.includes('*')) return true;
+                return user.permissions.includes(pageName);
+            }
+
+            getFirstAllowedPage() {
+                const navItems = document.querySelectorAll('.nav-item');
+                for (const item of navItems) {
+                    const page = item.getAttribute('data-page');
+                    if (this.hasPageAccess(page)) return page;
+                }
+                return 'dashboard';
+            }
+
+            applyUserPermissions() {
+                const navItems = document.querySelectorAll('.nav-item');
+                navItems.forEach(item => {
+                    const page = item.getAttribute('data-page');
+                    const allowed = this.hasPageAccess(page);
+                    item.style.display = allowed ? '' : 'none';
                 });
             }
             
@@ -810,6 +840,15 @@
             }
             
             loadPage(pageName) {
+                if (!this.hasPageAccess(pageName)) {
+                    this.showNotification('Bạn không có quyền truy cập trang này', 'warning');
+                    const fallbackPage = this.getFirstAllowedPage();
+                    if (fallbackPage && fallbackPage !== pageName) {
+                        pageName = fallbackPage;
+                    } else {
+                        return;
+                    }
+                }
                 console.log('📄 Loading page:', pageName);
                 this.currentPage = pageName;
                 
@@ -12948,6 +12987,66 @@
         styleSheet.textContent = notificationStyles;
         document.head.appendChild(styleSheet);
         
+        const ROLE_PERMISSION_PRESETS = {
+            admin: ['*'],
+            employee: ['dashboard', 'customers', 'orders', 'service-repairs', 'spare-parts', 'inventory', 'service-reports']
+        };
+
+        function getDefaultUserAccounts() {
+            return [
+                {
+                    username: 'Admin',
+                    password: 'Matkhau@123',
+                    fullName: 'Quản trị hệ thống',
+                    role: 'admin'
+                },
+                {
+                    username: 'NhanVien',
+                    password: 'Nhanvien@123',
+                    fullName: 'Nhân viên bán hàng',
+                    role: 'employee'
+                }
+            ];
+        }
+
+        function getUserAccounts() {
+            const raw = localStorage.getItem('maytinhbk_users');
+            if (!raw) {
+                const defaults = getDefaultUserAccounts();
+                localStorage.setItem('maytinhbk_users', JSON.stringify(defaults));
+                return defaults;
+            }
+
+            try {
+                const parsed = JSON.parse(raw);
+                if (!Array.isArray(parsed) || parsed.length === 0) {
+                    const defaults = getDefaultUserAccounts();
+                    localStorage.setItem('maytinhbk_users', JSON.stringify(defaults));
+                    return defaults;
+                }
+                return parsed;
+            } catch (error) {
+                console.error('Cannot parse maytinhbk_users, fallback defaults:', error);
+                const defaults = getDefaultUserAccounts();
+                localStorage.setItem('maytinhbk_users', JSON.stringify(defaults));
+                return defaults;
+            }
+        }
+
+        function authenticateUser(username, password) {
+            const users = getUserAccounts();
+            const found = users.find(user => user.username === username && user.password === password);
+            if (!found) return null;
+
+            const permissions = ROLE_PERMISSION_PRESETS[found.role] || [];
+            return {
+                username: found.username,
+                fullName: found.fullName || found.username,
+                role: found.role || 'employee',
+                permissions
+            };
+        }
+
         // Login functionality
         document.getElementById('loginForm').addEventListener('submit', function(e) {
             e.preventDefault();
@@ -12957,10 +13056,11 @@
             const errorMessage = document.getElementById('errorMessage');
             
             console.log('🔐 Login attempt:', { username, password });
-            console.log('🔐 Expected: Admin / Matkhau@123');
+            const authenticatedUser = authenticateUser(username, password);
             
             // Check credentials
-            if (username === 'Admin' && password === 'Matkhau@123') {
+            if (authenticatedUser) {
+                window.currentSessionUser = authenticatedUser;
                 // Hide login screen
                 document.getElementById('loginScreen').style.display = 'none';
                 // Show main app
@@ -12974,11 +13074,12 @@
                     setTimeout(() => {
                         if (app) {
                             app.setupNavigation();
+                            app.applyUserPermissions();
                             console.log('Navigation re-setup completed');
                             console.log('App is now available globally as window.app');
                         }
                     }, 200);
-                    showNotification('Đăng nhập thành công! Chào mừng Admin', 'success');
+                    showNotification(`Đăng nhập thành công! Chào mừng ${authenticatedUser.fullName} (${authenticatedUser.role})`, 'success');
                 }, 100);
             } else {
                 // Show error message
@@ -12996,6 +13097,7 @@
                 document.getElementById('appContainer').style.display = 'none';
                 // Show login screen
                 document.getElementById('loginScreen').style.display = 'flex';
+                window.currentSessionUser = null;
                 
                 // Clear form
                 document.getElementById('username').value = '';
