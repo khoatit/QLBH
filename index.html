@@ -163,11 +163,6 @@
                 </div>
 
                 <div style="display: flex; gap: 12px; align-items: center;">
-                    <div class="demo-badge" onclick="app.showCompanyInfo()" style="cursor: pointer;">
-                        <span>ℹ️</span>
-                        Giới thiệu
-                    </div>
-
                     <button onclick="if(window.app) { window.app.loadPage('orders'); } else { alert('App chưa sẵn sàng'); }" style="
                         background: var(--primary-blue);
                         color: white;
@@ -272,19 +267,23 @@
             window.closeModal(element);
         }
         
-        // Vietnamese PhuocIT Offline Application  
-        class VietnamesePhuocIT {
+        // Vietnamese MayTinhBK Offline Application
+        class VietnameseMayTinhBK {
             constructor() {
                 this.currentPage = 'dashboard';
+                this.remoteSyncTimer = null;
                 // 🚫 KHÔNG xoá localStorage nữa. Thay vào đó khởi tạo từ dữ liệu đã lưu (nếu có).
                 this.initializeData();
                 this.init();
+                this.syncFromRemoteDatabase();
             }
-initializeData() {
-                const saved = localStorage.getItem('phuocit_data');
+            initializeData() {
+                const saved = localStorage.getItem('maytinhbk_data');
                 if (saved && saved.trim() !== '') {
                     try {
                         this.demoData = JSON.parse(saved);
+                        this.ensureCompanySettingsData();
+                        this.ensureUniqueProductIds();
                         console.log('✅ LOADED EXISTING DATA FROM LOCALSTORAGE');
                         
                         // Migrate data: Thêm minStock cho sản phẩm cũ nếu chưa có
@@ -303,7 +302,107 @@ initializeData() {
                 // Chỉ tạo demo data nếu localStorage hoàn toàn trống
                 console.log('🆕 NO SAVED DATA - CREATING FRESH DEMO DATA');
                 this.demoData = this.generateDemoData();
-                this.saveToLocalStorage();
+                this.ensureCompanySettingsData();
+                this.ensureUniqueProductIds();
+                this.saveToLocalStorage({ skipRemote: true });
+            }
+
+            ensureCompanySettingsData() {
+                if (!this.demoData || typeof this.demoData !== 'object') return;
+                if (!this.demoData.companySettings || typeof this.demoData.companySettings !== 'object') {
+                    this.demoData.companySettings = {};
+                }
+
+                const legacySettingsRaw = localStorage.getItem('company_settings');
+                const legacyLogo = localStorage.getItem('company_logo');
+                const legacyQr = localStorage.getItem('company_qr');
+
+                if (Object.keys(this.demoData.companySettings).length === 0 && legacySettingsRaw) {
+                    try {
+                        const legacySettings = JSON.parse(legacySettingsRaw);
+                        if (legacySettings && typeof legacySettings === 'object') {
+                            this.demoData.companySettings = { ...legacySettings };
+                        }
+                    } catch (error) {
+                        console.error('Cannot parse legacy company settings:', error);
+                    }
+                }
+
+                if (legacyLogo && !this.demoData.companySettings.logo) {
+                    this.demoData.companySettings.logo = legacyLogo;
+                }
+                if (legacyQr && !this.demoData.companySettings.qrCode) {
+                    this.demoData.companySettings.qrCode = legacyQr;
+                }
+
+                this.syncCompanySettingsLegacyStorage();
+            }
+
+            syncCompanySettingsLegacyStorage() {
+                const settings = this.demoData?.companySettings && typeof this.demoData.companySettings === 'object'
+                    ? this.demoData.companySettings
+                    : {};
+
+                // Chỉ mirror phần text để tránh vượt quá quota localStorage khi logo/QR lớn.
+                const legacySettings = { ...settings };
+                delete legacySettings.logo;
+                delete legacySettings.qrCode;
+
+                try {
+                    localStorage.setItem('company_settings', JSON.stringify(legacySettings));
+                } catch (error) {
+                    console.warn('Cannot mirror company_settings to localStorage:', error);
+                }
+            }
+
+            ensureUniqueProductIds() {
+                if (!this.demoData || !Array.isArray(this.demoData.products)) return;
+
+                const seenIds = new Set();
+                let renamedCount = 0;
+
+                this.demoData.products.forEach((product) => {
+                    const currentId = String(product.id || '').trim();
+                    const isInvalid = !currentId;
+                    const isDuplicate = !isInvalid && seenIds.has(currentId);
+
+                    if (isInvalid || isDuplicate) {
+                        const newId = this.generateNextProductId(seenIds);
+                        product.id = newId;
+                        seenIds.add(newId);
+                        renamedCount += 1;
+                    } else {
+                        seenIds.add(currentId);
+                    }
+                });
+
+                if (renamedCount > 0) {
+                    console.warn(`⚠️ Đã tự động sửa ${renamedCount} mã sản phẩm bị trùng/rỗng.`);
+                }
+            }
+
+            generateNextProductId(existingIds = null) {
+                const usedIds = existingIds || new Set(
+                    (this.demoData?.products || [])
+                        .map(p => String(p.id || '').trim())
+                        .filter(Boolean)
+                );
+
+                let maxNumeric = 0;
+                usedIds.forEach((id) => {
+                    const match = id.match(/^SP(\d+)$/i);
+                    if (match) {
+                        maxNumeric = Math.max(maxNumeric, parseInt(match[1], 10));
+                    }
+                });
+
+                let candidateNumber = maxNumeric + 1;
+                let candidateId = `SP${String(candidateNumber).padStart(3, '0')}`;
+                while (usedIds.has(candidateId)) {
+                    candidateNumber += 1;
+                    candidateId = `SP${String(candidateNumber).padStart(3, '0')}`;
+                }
+                return candidateId;
             }
 
             // Migrate data để thêm minStock cho sản phẩm cũ
@@ -337,7 +436,7 @@ initializeData() {
                 const expectedDate = '2025-08-11';
                 
                 // Check if stored data has old dates or wrong date
-                const storedData = localStorage.getItem('phuocit_data');
+                const storedData = localStorage.getItem('maytinhbk_data');
                 if (storedData) {
                     try {
                         const data = JSON.parse(storedData);
@@ -373,16 +472,18 @@ initializeData() {
             }
             
             init() {
-                console.log('Initializing Vietnamese PhuocIT...');
+                console.log('Initializing Vietnamese MayTinhBK...');
                 
                 // Debug: Show current Vietnam time
                 const vietnamTime = this.getVietnamTime();
                 console.log('🕐 Thời gian Việt Nam hiện tại:', this.formatVietnameseTime());
-                console.log('Sample order date:', this.demoData.orders[0].date);
+                const sampleOrderDate = this.demoData?.orders?.[0]?.date || 'N/A';
+                console.log('Sample order date:', sampleOrderDate);
                 
                 this.setupNavigation();
+                this.applyUserPermissions();
                 this.setupEventListeners();
-                this.loadPage('dashboard');
+                this.loadPage(this.getFirstAllowedPage());
                 
                 // Khởi tạo filter state cho báo cáo
                 this.initFilterState();
@@ -399,7 +500,91 @@ initializeData() {
                 
                 // Show date debug info to user
                 this.showNotification(`Hệ thống khởi tạo lúc: ${this.formatVietnameseTime()}`, 'info');
-                console.log('Vietnamese PhuocIT initialized successfully');
+                console.log('Vietnamese MayTinhBK initialized successfully');
+            }
+
+            getRemoteDbConfig() {
+                return {
+                    enabled: localStorage.getItem('remote_db_enabled') === 'true',
+                    apiUrl: (localStorage.getItem('remote_db_url') || '').trim(),
+                    apiToken: (localStorage.getItem('remote_db_token') || '').trim()
+                };
+            }
+
+            getRemoteDbHeaders() {
+                const config = this.getRemoteDbConfig();
+                const headers = { 'Content-Type': 'application/json' };
+                if (config.apiToken) {
+                    headers.Authorization = `Bearer ${config.apiToken}`;
+                }
+                return headers;
+            }
+
+            async syncFromRemoteDatabase() {
+                const config = this.getRemoteDbConfig();
+                if (!config.enabled || !config.apiUrl) return;
+
+                try {
+                    const response = await fetch(`${config.apiUrl}/maytinhbk/data`, {
+                        method: 'GET',
+                        headers: this.getRemoteDbHeaders()
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    const payload = await response.json();
+                    const remoteData = payload?.data || payload;
+
+                    if (remoteData && typeof remoteData === 'object' && Array.isArray(remoteData.customers)) {
+                        this.demoData = remoteData;
+                        this.ensureCompanySettingsData();
+                        this.ensureUniqueProductIds();
+                        localStorage.setItem('maytinhbk_data', JSON.stringify(this.demoData));
+                        this.migrateProductData();
+                        this.loadPage(this.currentPage || 'dashboard');
+                        this.showNotification('Đã đồng bộ dữ liệu từ database thật', 'success');
+                    }
+                } catch (error) {
+                    console.error('Remote database sync failed:', error);
+                    this.showNotification('Không thể lấy dữ liệu DB thật, đang dùng dữ liệu local', 'warning');
+                }
+            }
+
+            queueRemoteSave() {
+                const config = this.getRemoteDbConfig();
+                if (!config.enabled || !config.apiUrl) return;
+
+                if (this.remoteSyncTimer) {
+                    clearTimeout(this.remoteSyncTimer);
+                }
+
+                this.remoteSyncTimer = setTimeout(() => {
+                    this.pushDataToRemoteDatabase();
+                }, 700);
+            }
+
+            async pushDataToRemoteDatabase() {
+                const config = this.getRemoteDbConfig();
+                if (!config.enabled || !config.apiUrl) return;
+
+                try {
+                    const response = await fetch(`${config.apiUrl}/maytinhbk/data`, {
+                        method: 'PUT',
+                        headers: this.getRemoteDbHeaders(),
+                        body: JSON.stringify({
+                            data: this.demoData,
+                            updatedAt: this.getVietnamTime().toISOString()
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                } catch (error) {
+                    console.error('Remote save failed:', error);
+                }
             }
             
             generateDemoData() {
@@ -420,7 +605,8 @@ initializeData() {
                     sales: this.generateSalesWithCurrentDate(),
                     serviceRepairs: this.generateServiceRepairsWithCurrentDate(),
                     spareParts: this.generateSpareParts(),
-                    technicians: this.generateTechnicians()
+                    technicians: this.generateTechnicians(),
+                    companySettings: {}
                 };
             }
 
@@ -601,10 +787,39 @@ initializeData() {
                     item.addEventListener('click', (e) => {
                         e.preventDefault();
                         const page = item.getAttribute('data-page');
+                        if (!this.hasPageAccess(page)) {
+                            this.showNotification('Bạn không có quyền truy cập chức năng này', 'warning');
+                            return;
+                        }
                         console.log('Navigation clicked:', page);
                         this.loadPage(page);
                         this.setActiveNav(item);
                     });
+                });
+            }
+
+            hasPageAccess(pageName) {
+                const user = window.currentSessionUser;
+                if (!user || !Array.isArray(user.permissions)) return false;
+                if (user.permissions.includes('*')) return true;
+                return user.permissions.includes(pageName);
+            }
+
+            getFirstAllowedPage() {
+                const navItems = document.querySelectorAll('.nav-item');
+                for (const item of navItems) {
+                    const page = item.getAttribute('data-page');
+                    if (this.hasPageAccess(page)) return page;
+                }
+                return 'dashboard';
+            }
+
+            applyUserPermissions() {
+                const navItems = document.querySelectorAll('.nav-item');
+                navItems.forEach(item => {
+                    const page = item.getAttribute('data-page');
+                    const allowed = this.hasPageAccess(page);
+                    item.style.display = allowed ? '' : 'none';
                 });
             }
             
@@ -625,6 +840,15 @@ initializeData() {
             }
             
             loadPage(pageName) {
+                if (!this.hasPageAccess(pageName)) {
+                    this.showNotification('Bạn không có quyền truy cập trang này', 'warning');
+                    const fallbackPage = this.getFirstAllowedPage();
+                    if (fallbackPage && fallbackPage !== pageName) {
+                        pageName = fallbackPage;
+                    } else {
+                        return;
+                    }
+                }
                 console.log('📄 Loading page:', pageName);
                 this.currentPage = pageName;
                 
@@ -1511,7 +1735,7 @@ initializeData() {
                         position: 'Kỹ thuật viên',
                         specialization: 'Điện tử',
                         phone: '0901234567',
-                        email: 'sample@phuocit.com',
+                        email: 'sample@maytinhbk.com',
                         experience: '1 năm',
                         skills: ['Sửa chữa cơ bản'],
                         certifications: ['Certificate mẫu'],
@@ -1689,9 +1913,12 @@ initializeData() {
                 const sparePartsOptions = this.demoData.spareParts.map(part => 
                     `<option value="${part.id}" data-price="${part.price}">${part.name} - ${part.price.toLocaleString('vi-VN')} ₫</option>`
                 ).join('');
+                const technicianOptions = (this.demoData.technicians || []).map(tech =>
+                    `<option value="${tech.name}">${tech.name}${tech.position ? ' - ' + tech.position : ''}</option>`
+                ).join('');
 
                 const formHTML = `
-                    <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1001; display: flex; justify-content: center; align-items: center;" onclick="closeModal(this)">
+                    <div id="createRepairModal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1001; display: flex; justify-content: center; align-items: center;" onclick="closeModal(this)">
                         <div style="background: white; padding: 32px; border-radius: 12px; width: 700px; max-width: 90vw; max-height: 80vh; overflow-y: auto;" onclick="event.stopPropagation()">
                             <h3 style="margin: 0 0 24px 0; color: #1f2937; font-size: 20px;">Tạo phiếu sửa chữa mới</h3>
                             
@@ -1699,10 +1926,15 @@ initializeData() {
                                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px;">
                                     <div>
                                         <label style="display: block; margin-bottom: 6px; font-weight: 600;">Khách hàng *</label>
-                                        <select name="customerId" required style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
-                                            <option value="">Chọn khách hàng</option>
-                                            ${customerOptions}
-                                        </select>
+                                        <div style="display: flex; gap: 8px;">
+                                            <select id="repairCustomerId" name="customerId" required style="flex: 1; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
+                                                <option value="">Chọn khách hàng</option>
+                                                ${customerOptions}
+                                            </select>
+                                            <button type="button" onclick="app.showQuickAddRepairCustomer()" style="background: #059669; color: white; border: none; padding: 0 12px; border-radius: 6px; cursor: pointer; white-space: nowrap; font-weight: 600;">
+                                                + KH mới
+                                            </button>
+                                        </div>
                                     </div>
                                     <div>
                                         <label style="display: block; margin-bottom: 6px; font-weight: 600;">Trạng thái *</label>
@@ -1741,6 +1973,12 @@ initializeData() {
                                 <div style="margin-bottom: 16px;">
                                     <label style="display: block; margin-bottom: 6px; font-weight: 600;">Mô tả vấn đề *</label>
                                     <textarea name="problem" placeholder="Mô tả chi tiết vấn đề gặp phải..." required style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; height: 80px; resize: vertical;"></textarea>
+                                    <div style="margin-top: 10px; padding: 10px; border: 1px dashed #cbd5e1; border-radius: 6px; background: #f8fafc;">
+                                        <label style="display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: #334155;">Ảnh mô tả lỗi (chụp nhanh/tải lên)</label>
+                                        <input id="repairProblemImages" type="file" accept="image/*" capture="environment" multiple onchange="app.previewRepairProblemImages(this)" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; background: white;">
+                                        <div style="margin-top: 6px; font-size: 12px; color: #64748b;">Có thể chọn nhiều ảnh (khuyên dùng tối đa 4 ảnh).</div>
+                                        <div id="repairProblemPreview" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; margin-top: 10px;"></div>
+                                    </div>
                                 </div>
 
                                 <div style="margin-bottom: 16px;">
@@ -1755,7 +1993,10 @@ initializeData() {
                                     </div>
                                     <div>
                                         <label style="display: block; margin-bottom: 6px; font-weight: 600;">Kỹ thuật viên</label>
-                                        <input type="text" name="technician" placeholder="Tên kỹ thuật viên" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
+                                        <select name="technician" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
+                                            <option value="">Chưa phân công</option>
+                                            ${technicianOptions}
+                                        </select>
                                     </div>
                                 </div>
 
@@ -1817,7 +2058,7 @@ initializeData() {
                                 </div>
 
                                 <div style="display: flex; gap: 12px; justify-content: flex-end;">
-                                    <button type="button" onclick="closeModal(this.closest('div[style*=\"fixed\"]'))" style="padding: 10px 20px; border: 1px solid #d1d5db; background: white; border-radius: 6px; cursor: pointer;">Hủy</button>
+                                    <button type="button" onclick="app.closeCreateRepairModal()" style="padding: 10px 20px; border: 1px solid #d1d5db; background: white; border-radius: 6px; cursor: pointer;">Hủy</button>
                                     <button type="submit" style="padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer;">Tạo phiếu</button>
                                 </div>
                             </form>
@@ -1834,6 +2075,15 @@ initializeData() {
                 setTimeout(() => {
                     this.updateTotalCost();
                 }, 100);
+            }
+
+            closeCreateRepairModal() {
+                const modal = document.getElementById('createRepairModal');
+                if (modal) {
+                    modal.remove();
+                    return;
+                }
+                closeModal();
             }
             
             addSparePart() {
@@ -1937,7 +2187,91 @@ initializeData() {
                 }
             }
 
-            submitCreateRepair(event) {
+            showQuickAddRepairCustomer() {
+                const quickAddHTML = `
+                    <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 1002; display: flex; justify-content: center; align-items: center;" onclick="closeModal(this)">
+                        <div style="background: white; padding: 24px; border-radius: 12px; width: 460px; max-width: 90vw;" onclick="event.stopPropagation()">
+                            <h3 style="margin: 0 0 16px 0; color: #1f2937;">➕ Thêm nhanh khách hàng</h3>
+                            <form onsubmit="app.submitQuickAddRepairCustomer(event)">
+                                <div style="margin-bottom: 12px;">
+                                    <label style="display: block; margin-bottom: 6px; font-weight: 600;">Tên khách hàng *</label>
+                                    <input type="text" name="name" required style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
+                                </div>
+                                <div style="margin-bottom: 12px;">
+                                    <label style="display: block; margin-bottom: 6px; font-weight: 600;">Số điện thoại *</label>
+                                    <input type="tel" name="phone" required style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
+                                </div>
+                                <div style="margin-bottom: 18px;">
+                                    <label style="display: block; margin-bottom: 6px; font-weight: 600;">Địa chỉ</label>
+                                    <input type="text" name="address" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
+                                </div>
+                                <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                                    <button type="button" onclick="closeModal(this.closest('div[style*=&quot;fixed&quot;]'))" style="padding: 10px 16px; border: 1px solid #d1d5db; background: white; border-radius: 6px; cursor: pointer;">Hủy</button>
+                                    <button type="submit" style="padding: 10px 16px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer;">Lưu khách hàng</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                `;
+                document.body.insertAdjacentHTML('beforeend', quickAddHTML);
+            }
+
+            submitQuickAddRepairCustomer(event) {
+                event.preventDefault();
+                const formData = new FormData(event.target);
+                const newCustomer = {
+                    id: 'KH' + String(Date.now()).slice(-6),
+                    name: (formData.get('name') || '').trim(),
+                    type: 'ca-nhan',
+                    phone: (formData.get('phone') || '').trim(),
+                    email: '',
+                    address: (formData.get('address') || '').trim(),
+                    debt: 0
+                };
+
+                if (!newCustomer.name || !newCustomer.phone) {
+                    this.showNotification('Vui lòng nhập tên và số điện thoại', 'error');
+                    return;
+                }
+
+                this.demoData.customers.push(newCustomer);
+                this.saveToLocalStorage();
+
+                const customerSelect = document.getElementById('repairCustomerId');
+                if (customerSelect) {
+                    const newOption = document.createElement('option');
+                    newOption.value = newCustomer.id;
+                    newOption.textContent = newCustomer.name;
+                    customerSelect.appendChild(newOption);
+                    customerSelect.value = newCustomer.id;
+                }
+
+                const modal = event.target.closest("div[style*=\"fixed\"]");
+                if (modal) modal.remove();
+                this.showNotification(`Đã thêm nhanh khách hàng ${newCustomer.name}`, 'success');
+            }
+
+            previewRepairProblemImages(input) {
+                const preview = document.getElementById('repairProblemPreview');
+                if (!preview) return;
+                preview.innerHTML = '';
+
+                const files = Array.from(input.files || []).slice(0, 4);
+                files.forEach((file) => {
+                    if (!file.type.startsWith('image/')) return;
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        preview.insertAdjacentHTML('beforeend', `
+                            <div style="border: 1px solid #d1d5db; border-radius: 6px; padding: 4px; background: white;">
+                                <img src="${e.target.result}" alt="Ảnh lỗi" style="width: 100%; height: 80px; object-fit: cover; border-radius: 4px;">
+                            </div>
+                        `);
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+
+            async submitCreateRepair(event) {
                 event.preventDefault();
                 const formData = new FormData(event.target);
                 const vietnamTime = this.getVietnamTime();
@@ -1955,6 +2289,18 @@ initializeData() {
                 const laborCost = parseInt(formData.get('laborCost')) || 0;
                 const sparePartsCost = this.tempSpareParts.reduce((sum, part) => sum + (part.quantity * part.price), 0);
                 const totalCost = laborCost + sparePartsCost;
+                const imageInput = event.target.querySelector('#repairProblemImages');
+                const rawImages = Array.from(imageInput?.files || []).slice(0, 4);
+                const problemImages = [];
+                for (const file of rawImages) {
+                    if (!file.type.startsWith('image/')) continue;
+                    try {
+                        const compressed = await this.compressImage(file, 0.7, 1280, 1280);
+                        problemImages.push(compressed);
+                    } catch (error) {
+                        console.error('Cannot process repair image:', error);
+                    }
+                }
                 
                 const newRepair = {
                     id: newId,
@@ -1966,6 +2312,7 @@ initializeData() {
                     deviceBrand: formData.get('deviceBrand'),
                     deviceModel: formData.get('deviceModel'),
                     problem: formData.get('problem'),
+                    problemImages,
                     diagnosis: formData.get('diagnosis') || '',
                     repairActions: '',
                     spareParts: [...this.tempSpareParts], // Copy array linh kiện
@@ -2083,6 +2430,18 @@ initializeData() {
                             <div style="margin-bottom: 24px;">
                                 <h4 style="margin: 0 0 12px 0; color: #374151;">Mô tả vấn đề</h4>
                                 <p style="background: #f9fafb; padding: 12px; border-radius: 6px; margin: 0;">${repair.problem}</p>
+                                ${Array.isArray(repair.problemImages) && repair.problemImages.length > 0 ? `
+                                    <div style="margin-top: 12px;">
+                                        <div style="font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 8px;">Ảnh mô tả lỗi:</div>
+                                        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px;">
+                                            ${repair.problemImages.map((img, imgIndex) => `
+                                                <a href="${img}" target="_blank" style="display: block; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; text-decoration: none;">
+                                                    <img src="${img}" alt="Ảnh lỗi ${imgIndex + 1}" style="width: 100%; height: 90px; object-fit: cover;">
+                                                </a>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                ` : ''}
                             </div>
 
                             ${repair.diagnosis ? `
@@ -2193,6 +2552,7 @@ initializeData() {
                 if (!repair) return;
 
                 const customer = this.demoData.customers.find(c => c.id === repair.customerId);
+                const companySettings = this.getCompanySettings();
                 
                 // Tạo nội dung in phiếu
                 const printContent = `
@@ -2204,7 +2564,7 @@ initializeData() {
                         <style>
                             @media print {
                                 @page {
-                                    margin: 15mm;
+                                    margin: 10mm;
                                     size: A4;
                                 }
                                 body { margin: 0; }
@@ -2219,20 +2579,28 @@ initializeData() {
                                 padding: 15px;
                             }
                             .header {
-                                text-align: center;
                                 border-bottom: 2px solid #2563eb;
                                 padding-bottom: 12px;
                                 margin-bottom: 20px;
+                                display: grid;
+                                grid-template-columns: 120px 1fr 120px;
+                                gap: 12px;
+                                align-items: center;
+                            }
+                            .header-logo, .header-qr {
+                                text-align: center;
                             }
                             .company-name {
                                 font-size: 18px;
                                 font-weight: bold;
                                 color: #2563eb;
                                 margin-bottom: 3px;
+                                text-align: center;
                             }
                             .company-info {
                                 font-size: 10px;
                                 color: #666;
+                                text-align: center;
                             }
                             .repair-title {
                                 font-size: 16px;
@@ -2315,18 +2683,30 @@ initializeData() {
                                 border-top: 1px solid #333;
                                 font-size: 11px;
                             }
-                            .print-date {
-                                text-align: right;
-                                font-size: 10px;
-                                color: #666;
-                                margin-top: 20px;
-                            }
                         </style>
                     </head>
                     <body>
-                        
-
-                        <div class="repair-title">PHIẾU SỬA CHỮA ${repair.id}</div>
+                        <div class="header">
+                            <div class="header-logo">
+                                ${companySettings.logo
+                                    ? `<img src="${companySettings.logo}" alt="Logo" style="max-width: 100px; max-height: 100px; object-fit: contain;">`
+                                    : '<div style="color:#cbd5e1; font-size:12px;">Logo</div>'}
+                            </div>
+                            <div>
+                                <div class="company-name">${companySettings.companyName || 'CỬA HÀNG'}</div>
+                                <div class="company-info">
+                                    ${companySettings.address || ''}<br>
+                                    Điện thoại: ${companySettings.phone || ''}${companySettings.email ? ' | Email: ' + companySettings.email : ''}<br>
+                                    ${companySettings.taxCode ? 'MST: ' + companySettings.taxCode : ''}
+                                </div>
+                                <div class="repair-title">PHIẾU SỬA CHỮA</div>
+                            </div>
+                            <div class="header-qr">
+                                ${companySettings.qrCode
+                                    ? `<img src="${companySettings.qrCode}" alt="QR Code" style="max-width: 100px; max-height: 100px; object-fit: contain;">`
+                                    : '<div style="color:#cbd5e1; font-size:12px;">QR</div>'}
+                            </div>
+                        </div>
 
                         <div class="info-grid">
                             <div>
@@ -2365,6 +2745,10 @@ initializeData() {
                                 <div class="info-item">
                                     <span class="info-label">Ngày tiếp nhận:</span>
                                     ${new Date(repair.date).toLocaleDateString('vi-VN')} ${repair.time}
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Mã phiếu:</span>
+                                    ${repair.id}
                                 </div>
                                 <div class="info-item">
                                     <span class="info-label">Trạng thái:</span>
@@ -2442,10 +2826,6 @@ initializeData() {
                                 <div style="font-size: 12px; margin-top: 5px;">(Ký và ghi rõ họ tên)</div>
                             </div>
                         </div>
-
-                        <div class="print-date">
-                            Ngày in: ${new Date().toLocaleDateString('vi-VN')} ${new Date().toLocaleTimeString('vi-VN')}
-                        </div>
                     </body>
                     </html>
                 `;
@@ -2476,6 +2856,10 @@ initializeData() {
 
                 const priorityOptions = ['Thấp', 'Trung bình', 'Cao'].map(priority =>
                     `<option value="${priority}" ${priority === repair.priority ? 'selected' : ''}>${priority}</option>`
+                ).join('');
+                const technicianExists = (this.demoData.technicians || []).some(tech => tech.name === repair.technician);
+                const technicianOptions = (this.demoData.technicians || []).map(tech =>
+                    `<option value="${tech.name}" ${tech.name === repair.technician ? 'selected' : ''}>${tech.name}${tech.position ? ' - ' + tech.position : ''}</option>`
                 ).join('');
 
                 const formHTML = `
@@ -2529,7 +2913,11 @@ initializeData() {
                                     </div>
                                     <div>
                                         <label style="display: block; margin-bottom: 6px; font-weight: 600;">Kỹ thuật viên</label>
-                                        <input type="text" name="technician" value="${repair.technician}" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
+                                        <select name="technician" style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;">
+                                            <option value="">Chưa phân công</option>
+                                            ${repair.technician && !technicianExists ? `<option value="${repair.technician}" selected>${repair.technician}</option>` : ''}
+                                            ${technicianOptions}
+                                        </select>
                                     </div>
                                 </div>
 
@@ -2653,7 +3041,7 @@ initializeData() {
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(blob);
-                link.download = `PhuocIT_Service_Repairs_${new Date().toISOString().split('T')[0]}.csv`;
+                link.download = `MayTinhBK_Service_Repairs_${new Date().toISOString().split('T')[0]}.csv`;
                 link.click();
                 
                 this.showNotification('Đã xuất file CSV báo cáo sửa chữa!', 'success');
@@ -3945,6 +4333,7 @@ initializeData() {
                 const lastBackupTime = localStorage.getItem('last_backup_time');
                 const autoBackupEnabled = localStorage.getItem('auto_backup_enabled') === 'true';
                 const backupInterval = localStorage.getItem('backup_interval') || '30';
+                const remoteDbConfig = this.getRemoteDbConfig();
                 
                 return `
                     <div class="fade-in">
@@ -4004,6 +4393,41 @@ initializeData() {
                                     <div style="font-size: 12px; color: #6b7280; text-align: center;">
                                         File được lưu định dạng JSON<br>
                                         Tự động tải về thư mục Downloads
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style="background: white; padding: 20px; border-radius: 12px; border: 2px solid #e5e7eb; margin-top: 20px;">
+                                <h3 style="margin-bottom: 16px; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+                                    <span>🗄️</span> Database thật (API)
+                                </h3>
+                                <div style="display: grid; gap: 12px;">
+                                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                        <input type="checkbox" id="remote-db-enabled" ${remoteDbConfig.enabled ? 'checked' : ''}
+                                               onchange="app.saveRemoteDbSettings()">
+                                        <span>Bật đồng bộ với DB thật</span>
+                                    </label>
+                                    <input id="remote-db-url" type="text" value="${remoteDbConfig.apiUrl}"
+                                           placeholder="VD: https://api.tenmien.com"
+                                           style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;"
+                                           onblur="app.saveRemoteDbSettings()">
+                                    <input id="remote-db-token" type="password" value="${remoteDbConfig.apiToken}"
+                                           placeholder="Bearer token (nếu có)"
+                                           style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;"
+                                           onblur="app.saveRemoteDbSettings()">
+                                    <div style="display: flex; gap: 10px;">
+                                        <button onclick="app.testRemoteDbConnection()"
+                                                style="background: var(--header-gradient); color: white; border: none; border-radius: 6px; padding: 10px 12px; cursor: pointer;">
+                                            Kiểm tra kết nối
+                                        </button>
+                                        <button onclick="app.syncFromRemoteDatabase()"
+                                                style="background: var(--success-gradient); color: white; border: none; border-radius: 6px; padding: 10px 12px; cursor: pointer;">
+                                            Đồng bộ ngay
+                                        </button>
+                                    </div>
+                                    <div style="font-size: 12px; color: #6b7280;">
+                                        Endpoint yêu cầu:
+                                        <code>GET/PUT {API_URL}/maytinhbk/data</code>
                                     </div>
                                 </div>
                             </div>
@@ -4175,7 +4599,7 @@ initializeData() {
                     type: 'info',
                     icon: '🚀',
                     title: 'Khởi động hệ thống',
-                    description: 'Hệ thống PhuocIT đã được khởi động và sẵn sàng hoạt động',
+                    description: 'Hệ thống MayTinhBK đã được khởi động và sẵn sàng hoạt động',
                     time: new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString(),
                     category: 'system'
                 });
@@ -4250,37 +4674,6 @@ initializeData() {
                 setTimeout(() => {
                     notification.classList.remove('show');
                 }, 3000);
-            }
-            
-            showCompanyInfo() {
-                const infoHTML = `
-                    <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1001; display: flex; justify-content: center; align-items: center;" onclick="closeModal(this)">
-                        <div style="background: white; padding: 32px; border-radius: 16px; width: 500px; max-width: 90vw; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.3); max-height: 90vh; overflow-y: auto;" onclick="event.stopPropagation()">
-                            <div style="font-size: 48px; margin-bottom: 16px;">🏪</div>
-                            <h3 style="color: var(--primary-blue); margin-bottom: 20px; font-size: 24px; font-weight: bold;">PhuocIT.com</h3>
-                            
-                            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 12px; margin-bottom: 20px;">
-                                <h4 style="margin-bottom: 12px; font-size: 18px;"> Phiên bản Online Qlbanhang.Vn</h4>
-								<h4 style="margin-bottom: 12px; font-size: 18px;"> Phiên bản Web Offline Banhang24h.vn</h4>								
-                                <p style="margin-bottom: 0; font-size: 16px; line-height: 1.4;">Phần mềm được chia sẻ miễn phí ( Phiên bản P6 )</p>
-                            </div>
-                            
-                            <div style="background: #f8fafc; padding: 16px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid var(--success-color);">
-                                <p style="margin: 0; color: #374151; line-height: 1.5;">
-                                    💡 Nếu cần bổ sung tính năng hoặc cá nhân hóa có thể liên hệ để được hỗ trợ tốt nhất.
-                                </p>
-                            </div>
-                            
-                            <div style="display: flex; gap: 12px; justify-content: center;">
-                                <a href="https://phuocit.com" target="_blank" style="background: var(--header-gradient); color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: 600;">
-                                    🌐 Truy cập Website để cập nhật các bản mới nhất
-                                </a>
-                               
-                            </div>
-                        </div>
-                    </div>
-                `;
-                document.body.insertAdjacentHTML('beforeend', infoHTML);
             }
             
             // Customer Management Functions
@@ -5408,12 +5801,20 @@ initializeData() {
             }
             
             // Local Storage Management
-            saveToLocalStorage() {
-                localStorage.setItem('phuocit_data', JSON.stringify(this.demoData));
+            saveToLocalStorage(options = {}) {
+                try {
+                    localStorage.setItem('maytinhbk_data', JSON.stringify(this.demoData));
+                    this.syncCompanySettingsLegacyStorage();
+                } catch (error) {
+                    console.warn('Cannot save full payload to localStorage, will still try remote sync:', error);
+                    this.showNotification('Dữ liệu ảnh quá lớn, app sẽ ưu tiên đồng bộ DB thật', 'warning');
+                }
+                if (options.skipRemote) return;
+                this.queueRemoteSave();
             }
             
             loadFromLocalStorage() {
-                const saved = localStorage.getItem('phuocit_data');
+                const saved = localStorage.getItem('maytinhbk_data');
                 if (saved) {
                     this.demoData = JSON.parse(saved);
                     console.log('=== FORCE RELOAD FROM LOCALSTORAGE ===');
@@ -5424,6 +5825,44 @@ initializeData() {
                     return true; // Indicate successful load
                 }
                 return false; // No data found
+            }
+
+            saveRemoteDbSettings() {
+                const enabledEl = document.getElementById('remote-db-enabled');
+                const urlEl = document.getElementById('remote-db-url');
+                const tokenEl = document.getElementById('remote-db-token');
+
+                if (!enabledEl || !urlEl || !tokenEl) return;
+
+                localStorage.setItem('remote_db_enabled', enabledEl.checked ? 'true' : 'false');
+                localStorage.setItem('remote_db_url', urlEl.value.trim());
+                localStorage.setItem('remote_db_token', tokenEl.value.trim());
+                this.showNotification('Đã lưu cấu hình database thật', 'success');
+            }
+
+            async testRemoteDbConnection() {
+                this.saveRemoteDbSettings();
+                const config = this.getRemoteDbConfig();
+                if (!config.apiUrl) {
+                    this.showNotification('Vui lòng nhập API URL trước khi kiểm tra', 'warning');
+                    return;
+                }
+
+                try {
+                    const response = await fetch(`${config.apiUrl}/maytinhbk/data`, {
+                        method: 'GET',
+                        headers: this.getRemoteDbHeaders()
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+
+                    this.showNotification('Kết nối DB thật thành công', 'success');
+                } catch (error) {
+                    console.error('Test remote DB failed:', error);
+                    this.showNotification('Kết nối thất bại, vui lòng kiểm tra URL/TOKEN', 'error');
+                }
             }
             
             // Backup Management Functions
@@ -5542,7 +5981,7 @@ initializeData() {
             }
             
             calculateStorageSize() {
-                const data = localStorage.getItem('phuocit_data');
+                const data = localStorage.getItem('maytinhbk_data');
                 if (data) {
                     const sizeInBytes = new Blob([data]).size;
                     const sizeInKB = (sizeInBytes / 1024).toFixed(1);
@@ -5582,29 +6021,53 @@ initializeData() {
                     return;
                 }
                 
-                // Save to localStorage
-                localStorage.setItem('company_settings', JSON.stringify(companySettings));
+                this.persistCompanySettings(companySettings);
                 this.showNotification('Đã lưu thông tin công ty thành công! Thông tin này sẽ hiển thị trên hóa đơn in ra.', 'success');
                 
                 console.log('💾 Company settings saved:', companySettings);
             }
+
+            persistCompanySettings(companySettings, options = {}) {
+                if (!this.demoData || typeof this.demoData !== 'object') {
+                    this.demoData = this.generateDemoData();
+                }
+                this.ensureCompanySettingsData();
+
+                const existingSettings = this.demoData.companySettings || {};
+                this.demoData.companySettings = {
+                    ...existingSettings,
+                    ...(companySettings || {})
+                };
+
+                this.saveToLocalStorage({ skipRemote: options.skipRemote === true });
+            }
             
             resetCompanySettings() {
                 if (confirm('Bạn có chắc chắn muốn xóa tất cả thông tin công ty đã lưu?')) {
-                    localStorage.removeItem('company_settings');
+                    this.persistCompanySettings({
+                        companyName: '',
+                        taxCode: '',
+                        address: '',
+                        phone: '',
+                        email: '',
+                        representative: '',
+                        position: '',
+                        description: '',
+                        logo: null,
+                        qrCode: null,
+                        updatedAt: this.getVietnamTime().toISOString()
+                    });
                     this.showNotification('Đã xóa thông tin công ty', 'success');
                     
                     // Reload settings page to show empty form
-                    this.loadPage('settings');
+                    this.loadPage('company-info');
                 }
             }
             
             getCompanySettings() {
                 try {
-                    const settings = localStorage.getItem('company_settings');
-                    if (!settings) return {};
-                    
-                    const parsed = JSON.parse(settings);
+                    this.ensureCompanySettingsData();
+                    const parsed = this.demoData?.companySettings || {};
                     
                     // Validate that logo and QR data exist
                     console.log('Loading company settings...');
@@ -5736,9 +6199,10 @@ initializeData() {
                     
                     // Lưu vào global variable
                     window.companyAssets.logo = imageData;
-                    
-                    // ✅ LƯU VÀO LOCALSTORAGE - KHÔNG MẤT KHI F5
-                    localStorage.setItem('company_logo', imageData);
+                    const companySettings = this.getCompanySettings();
+                    companySettings.logo = imageData;
+                    companySettings.updatedAt = this.getVietnamTime().toISOString();
+                    this.persistCompanySettings(companySettings);
                     
                     // Update display ngay lập tức
                     const logoDisplay = document.getElementById('logo-display');
@@ -5765,9 +6229,10 @@ initializeData() {
                     
                     // Lưu vào global variable
                     window.companyAssets.qr = imageData;
-                    
-                    // ✅ LƯU VÀO LOCALSTORAGE - KHÔNG MẤT KHI F5
-                    localStorage.setItem('company_qr', imageData);
+                    const companySettings = this.getCompanySettings();
+                    companySettings.qrCode = imageData;
+                    companySettings.updatedAt = this.getVietnamTime().toISOString();
+                    this.persistCompanySettings(companySettings);
                     
                     // Update display ngay lập tức
                     const qrDisplay = document.getElementById('qr-display');
@@ -5812,10 +6277,9 @@ initializeData() {
                     
                     // Save with error handling
                     try {
-                        localStorage.setItem('company_settings', JSON.stringify(companySettings));
-                        // Double check save
-                        const testSave = localStorage.getItem('company_settings');
-                        if (testSave && JSON.parse(testSave).logo) {
+                        this.persistCompanySettings(companySettings);
+                        const testSave = this.getCompanySettings();
+                        if (testSave && testSave.logo) {
                             console.log('Logo successfully saved to localStorage');
                         } else {
                             throw new Error('Save verification failed');
@@ -5864,7 +6328,8 @@ initializeData() {
                 // Remove logo from company settings
                 const companySettings = this.getCompanySettings();
                 delete companySettings.logo;
-                localStorage.setItem('company_settings', JSON.stringify(companySettings));
+                companySettings.updatedAt = this.getVietnamTime().toISOString();
+                this.persistCompanySettings(companySettings);
                 
                 // Update display
                 const logoDisplay = document.getElementById('logo-display');
@@ -5911,7 +6376,8 @@ initializeData() {
                 
                 // Save QR URL to company settings
                 companySettings.qrCode = qrURL;
-                localStorage.setItem('company_settings', JSON.stringify(companySettings));
+                companySettings.updatedAt = this.getVietnamTime().toISOString();
+                this.persistCompanySettings(companySettings);
                 
                 // Debug log
                 console.log('QR saved to localStorage:', !!companySettings.qrCode);
@@ -5966,10 +6432,9 @@ initializeData() {
                     
                     // Save with error handling
                     try {
-                        localStorage.setItem('company_settings', JSON.stringify(companySettings));
-                        // Double check save
-                        const testSave = localStorage.getItem('company_settings');
-                        if (testSave && JSON.parse(testSave).qrCode) {
+                        this.persistCompanySettings(companySettings);
+                        const testSave = this.getCompanySettings();
+                        if (testSave && testSave.qrCode) {
                             console.log('QR successfully saved to localStorage');
                         } else {
                             throw new Error('QR save verification failed');
@@ -6001,7 +6466,8 @@ initializeData() {
                 // Remove QR from company settings
                 const companySettings = this.getCompanySettings();
                 delete companySettings.qrCode;
-                localStorage.setItem('company_settings', JSON.stringify(companySettings));
+                companySettings.updatedAt = this.getVietnamTime().toISOString();
+                this.persistCompanySettings(companySettings);
                 
                 // Update display
                 const qrDisplay = document.getElementById('qr-display');
@@ -6343,7 +6809,7 @@ initializeData() {
                 const formData = new FormData(form);
                 
                 const newProduct = {
-                    id: 'SP' + String(this.demoData.products.length + 1).padStart(3, '0'),
+                    id: this.generateNextProductId(),
                     name: formData.get('name'),
                     category: formData.get('category'),
                     importPrice: parseInt(formData.get('importPrice')),
@@ -6465,7 +6931,7 @@ initializeData() {
 
             // Helper function để tạo category options với selected
             getCategoryOptionsWithSelected(selectedCategory) {
-                const categories = JSON.parse(localStorage.getItem('categories')) || [];
+                const categories = this.getCategoriesList();
                 let options = '<option value="">Chọn danh mục</option>';
                 
                 categories.forEach(category => {
@@ -6905,7 +7371,7 @@ initializeData() {
                 let product = this.demoData.products.find(p => p.name.toLowerCase() === productName.toLowerCase());
                 if (!product) {
                     product = {
-                        id: 'SP' + String(this.demoData.products.length + 1).padStart(3, '0'),
+                        id: this.generateNextProductId(),
                         name: productName,
                         category: 'Nhập mới',
                         price: price,
@@ -6923,9 +7389,8 @@ initializeData() {
             }
             
             // Categories Management
-            getCategoriesContent() {
-                // Get categories from localStorage or initialize default ones
-                const categories = JSON.parse(localStorage.getItem('categories')) || [
+            getDefaultCategories() {
+                return [
                     { id: 'cat1', name: 'Điện thoại', parent: null, level: 0 },
                     { id: 'cat2', name: 'Laptop', parent: null, level: 0 },
                     { id: 'cat3', name: 'Tablet', parent: null, level: 0 },
@@ -6934,6 +7399,29 @@ initializeData() {
                     { id: 'cat6', name: 'Bóng đá', parent: 'cat5', level: 1 },
                     { id: 'cat7', name: 'Pickle Ball', parent: 'cat5', level: 1 }
                 ];
+            }
+
+            getCategoriesList() {
+                if (!Array.isArray(this.demoData.categories) || this.demoData.categories.length === 0) {
+                    const legacyCategories = JSON.parse(localStorage.getItem('categories') || 'null');
+                    this.demoData.categories = Array.isArray(legacyCategories) && legacyCategories.length
+                        ? legacyCategories
+                        : this.getDefaultCategories();
+                    localStorage.removeItem('categories');
+                    this.saveToLocalStorage({ skipRemote: true });
+                }
+
+                return this.demoData.categories;
+            }
+
+            saveCategoriesList(categories) {
+                this.demoData.categories = categories;
+                localStorage.removeItem('categories');
+                this.saveToLocalStorage();
+            }
+
+            getCategoriesContent() {
+                const categories = this.getCategoriesList();
 
                 const categoryTree = this.buildCategoryTree(categories);
                 
@@ -7057,7 +7545,7 @@ initializeData() {
             }
 
             showAddSubCategoryForm() {
-                const categories = JSON.parse(localStorage.getItem('categories')) || [];
+                const categories = this.getCategoriesList();
                 const parentCategories = categories.filter(c => c.parent === null);
                 const parentOptions = parentCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
                 
@@ -7096,7 +7584,7 @@ initializeData() {
                 const formData = new FormData(form);
                 const categoryName = formData.get('categoryName');
                 
-                const categories = JSON.parse(localStorage.getItem('categories')) || [];
+                const categories = this.getCategoriesList();
                 const newCategory = {
                     id: 'cat' + Date.now(),
                     name: categoryName,
@@ -7105,7 +7593,7 @@ initializeData() {
                 };
                 
                 categories.push(newCategory);
-                localStorage.setItem('categories', JSON.stringify(categories));
+                this.saveCategoriesList(categories);
                 
                 this.showNotification(`Đã thêm danh mục "${categoryName}"`, 'success');
                 this.loadPage('categories');
@@ -7119,7 +7607,7 @@ initializeData() {
                 const categoryName = formData.get('categoryName');
                 const parentId = formData.get('parentCategory');
                 
-                const categories = JSON.parse(localStorage.getItem('categories')) || [];
+                const categories = this.getCategoriesList();
                 const newCategory = {
                     id: 'cat' + Date.now(),
                     name: categoryName,
@@ -7128,7 +7616,7 @@ initializeData() {
                 };
                 
                 categories.push(newCategory);
-                localStorage.setItem('categories', JSON.stringify(categories));
+                this.saveCategoriesList(categories);
                 
                 this.showNotification(`Đã thêm danh mục con "${categoryName}"`, 'success');
                 this.loadPage('categories');
@@ -7136,7 +7624,7 @@ initializeData() {
             }
 
             editCategory(categoryId) {
-                const categories = JSON.parse(localStorage.getItem('categories')) || [];
+                const categories = this.getCategoriesList();
                 const category = categories.find(c => c.id === categoryId);
                 
                 if (!category) {
@@ -7172,12 +7660,12 @@ initializeData() {
                 const formData = new FormData(form);
                 const categoryName = formData.get('categoryName');
                 
-                const categories = JSON.parse(localStorage.getItem('categories')) || [];
+                const categories = this.getCategoriesList();
                 const categoryIndex = categories.findIndex(c => c.id === categoryId);
                 
                 if (categoryIndex !== -1) {
                     categories[categoryIndex].name = categoryName;
-                    localStorage.setItem('categories', JSON.stringify(categories));
+                    this.saveCategoriesList(categories);
                     
                     this.showNotification(`Đã cập nhật danh mục "${categoryName}"`, 'success');
                     this.loadPage('categories');
@@ -7191,29 +7679,16 @@ initializeData() {
             deleteCategory(categoryId) {
                 if (!confirm('Bạn có chắc chắn muốn xóa danh mục này?')) return;
                 
-                const categories = JSON.parse(localStorage.getItem('categories')) || [];
+                const categories = this.getCategoriesList();
                 const updatedCategories = categories.filter(c => c.id !== categoryId && c.parent !== categoryId);
-                localStorage.setItem('categories', JSON.stringify(updatedCategories));
+                this.saveCategoriesList(updatedCategories);
                 
                 this.showNotification('Đã xóa danh mục', 'success');
                 this.loadPage('categories');
             }
 
             getCategoryOptions() {
-                const categories = JSON.parse(localStorage.getItem('categories')) || [
-                    { id: 'cat1', name: 'Điện thoại', parent: null, level: 0 },
-                    { id: 'cat2', name: 'Laptop', parent: null, level: 0 },
-                    { id: 'cat3', name: 'Tablet', parent: null, level: 0 },
-                    { id: 'cat4', name: 'Phụ kiện', parent: null, level: 0 },
-                    { id: 'cat5', name: 'Sản phẩm', parent: null, level: 0 },
-                    { id: 'cat6', name: 'Bóng đá', parent: 'cat5', level: 1 },
-                    { id: 'cat7', name: 'Pickle Ball', parent: 'cat5', level: 1 }
-                ];
-                
-                // Save default categories if not exist
-                if (!localStorage.getItem('categories')) {
-                    localStorage.setItem('categories', JSON.stringify(categories));
-                }
+                const categories = this.getCategoriesList();
                 
                 let options = '<option value="">Chọn danh mục</option>';
                 
@@ -7470,7 +7945,7 @@ initializeData() {
                     console.log('💾 Data saved to localStorage');
                     
                     // Kiểm tra localStorage ngay sau khi lưu
-                    const savedData = JSON.parse(localStorage.getItem('phuocit_data'));
+                    const savedData = JSON.parse(localStorage.getItem('maytinhbk_data'));
                     const savedCustomer = savedData.customers.find(c => c.id === customerId);
                     console.log(`✅ VERIFIED IN LOCALSTORAGE: ${savedCustomer.name} nợ ${savedCustomer.debt.toLocaleString('vi-VN')} VNĐ`);
                     
@@ -8674,12 +9149,13 @@ initializeData() {
                 const dropdown = element.closest('.custom-dropdown');
                 const dropdownList = dropdown.querySelector('.dropdown-list');
                 const arrow = dropdown.querySelector('.dropdown-arrow');
+                const wasOpen = dropdownList.style.display === 'block';
                 
                 // Close other dropdowns
                 this.closeAllDropdowns();
                 
                 // Toggle current dropdown
-                if (dropdownList.style.display === 'none' || !dropdownList.style.display) {
+                if (!wasOpen) {
                     dropdownList.style.display = 'block';
                     arrow.style.transform = 'rotate(180deg)';
                     
@@ -8696,12 +9172,13 @@ initializeData() {
                 const dropdown = element.closest('.custom-dropdown');
                 const dropdownList = dropdown.querySelector('.dropdown-list');
                 const arrow = dropdown.querySelector('.dropdown-arrow');
+                const wasOpen = dropdownList.style.display === 'block';
                 
                 // Close other dropdowns
                 this.closeAllDropdowns();
                 
                 // Toggle current dropdown
-                if (dropdownList.style.display === 'none' || !dropdownList.style.display) {
+                if (!wasOpen) {
                     dropdownList.style.display = 'block';
                     arrow.style.transform = 'rotate(180deg)';
                     
@@ -9960,17 +10437,35 @@ initializeData() {
 
                 // Add to demo data
                 this.demoData.customers.push(newCustomer);
+                this.saveToLocalStorage();
 
-                // Update customer select in the current form
-                const customerSelect = document.getElementById('customer-select');
-                if (customerSelect) {
-                    const newOption = document.createElement('option');
-                    newOption.value = newCustomer.id;
-                    newOption.textContent = `${newCustomer.name} - ${newCustomer.phone}`;
-                    customerSelect.appendChild(newOption);
-                    
-                    // Select the newly added customer
-                    customerSelect.value = newCustomer.id;
+                // Update customer dropdown in the create-order form
+                const customerDropdown = document.querySelector('.custom-dropdown input[name="customer"]')?.closest('.custom-dropdown');
+                if (customerDropdown) {
+                    const dropdownOptions = customerDropdown.querySelector('.dropdown-options');
+                    if (dropdownOptions) {
+                        const option = document.createElement('div');
+                        option.className = 'dropdown-option';
+                        option.setAttribute('data-value', newCustomer.id);
+                        option.style.cssText = 'padding: 10px; cursor: pointer; border-bottom: 1px solid #f3f4f6;';
+                        option.onmouseover = function () { this.style.background = '#f3f4f6'; };
+                        option.onmouseout = function () { this.style.background = 'white'; };
+                        option.textContent = `${newCustomer.name} - ${newCustomer.phone}`;
+                        option.addEventListener('click', () => {
+                            this.selectCustomer(option, newCustomer.id, `${newCustomer.name} - ${newCustomer.phone}`);
+                        });
+                        dropdownOptions.prepend(option);
+                    }
+
+                    const selectedText = customerDropdown.querySelector('.selected-text');
+                    const hiddenInput = customerDropdown.querySelector('input[name="customer"]');
+                    if (selectedText) {
+                        selectedText.textContent = `${newCustomer.name} - ${newCustomer.phone}`;
+                        selectedText.style.color = '#374151';
+                    }
+                    if (hiddenInput) {
+                        hiddenInput.value = newCustomer.id;
+                    }
                 }
 
                 // Close the modal
@@ -10447,7 +10942,7 @@ initializeData() {
                                 <div class="totals-section">
                                     <div style="background: #f0f9ff; padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #0ea5e9;">
                                         <div style="text-align: center; color: #0c4a6e; font-size: 14px; font-weight: 600;">
-                                            💡 Giá đúng - Không tính thêm VAT
+                                            💡 Giá chưa kèm VAT
                                         </div>
                                     </div>
                                     <div class="total-row final">
@@ -10460,11 +10955,9 @@ initializeData() {
                                 <div class="signature-section">
                                     <div class="signature-box">
                                         <div class="signature-title">Người mua hàng</div>
-                                        <div>(Ký và ghi rõ họ tên)</div>
                                     </div>
                                     <div class="signature-box">
                                         <div class="signature-title">Người bán hàng</div>
-                                        <div>(Ký và ghi rõ họ tên)</div>
                                     </div>
                                 </div>
 
@@ -11370,7 +11863,7 @@ initializeData() {
 
                                 <!-- Footer -->
                                 <div class="footer-info">
-                                    <p><strong>Báo cáo được tạo tự động bởi hệ thống PhuocIT</strong></p>
+                                    <p><strong>Báo cáo được tạo tự động bởi hệ thống MayTinhBK</strong></p>
                                     <p>Thời gian tạo: ${this.getVietnamTime().toLocaleString('vi-VN', { 
                                         timeZone: 'Asia/Ho_Chi_Minh',
                                         year: 'numeric',
@@ -12494,6 +12987,66 @@ initializeData() {
         styleSheet.textContent = notificationStyles;
         document.head.appendChild(styleSheet);
         
+        const ROLE_PERMISSION_PRESETS = {
+            admin: ['*'],
+            employee: ['dashboard', 'customers', 'orders', 'service-repairs', 'spare-parts', 'inventory', 'service-reports']
+        };
+
+        function getDefaultUserAccounts() {
+            return [
+                {
+                    username: 'Admin',
+                    password: 'Matkhau@123',
+                    fullName: 'Quản trị hệ thống',
+                    role: 'admin'
+                },
+                {
+                    username: 'NhanVien',
+                    password: 'Nhanvien@123',
+                    fullName: 'Nhân viên bán hàng',
+                    role: 'employee'
+                }
+            ];
+        }
+
+        function getUserAccounts() {
+            const raw = localStorage.getItem('maytinhbk_users');
+            if (!raw) {
+                const defaults = getDefaultUserAccounts();
+                localStorage.setItem('maytinhbk_users', JSON.stringify(defaults));
+                return defaults;
+            }
+
+            try {
+                const parsed = JSON.parse(raw);
+                if (!Array.isArray(parsed) || parsed.length === 0) {
+                    const defaults = getDefaultUserAccounts();
+                    localStorage.setItem('maytinhbk_users', JSON.stringify(defaults));
+                    return defaults;
+                }
+                return parsed;
+            } catch (error) {
+                console.error('Cannot parse maytinhbk_users, fallback defaults:', error);
+                const defaults = getDefaultUserAccounts();
+                localStorage.setItem('maytinhbk_users', JSON.stringify(defaults));
+                return defaults;
+            }
+        }
+
+        function authenticateUser(username, password) {
+            const users = getUserAccounts();
+            const found = users.find(user => user.username === username && user.password === password);
+            if (!found) return null;
+
+            const permissions = ROLE_PERMISSION_PRESETS[found.role] || [];
+            return {
+                username: found.username,
+                fullName: found.fullName || found.username,
+                role: found.role || 'employee',
+                permissions
+            };
+        }
+
         // Login functionality
         document.getElementById('loginForm').addEventListener('submit', function(e) {
             e.preventDefault();
@@ -12503,10 +13056,11 @@ initializeData() {
             const errorMessage = document.getElementById('errorMessage');
             
             console.log('🔐 Login attempt:', { username, password });
-            console.log('🔐 Expected: Admin / Matkhau@123');
+            const authenticatedUser = authenticateUser(username, password);
             
             // Check credentials
-            if (username === 'Admin' && password === 'Matkhau@123') {
+            if (authenticatedUser) {
+                window.currentSessionUser = authenticatedUser;
                 // Hide login screen
                 document.getElementById('loginScreen').style.display = 'none';
                 // Show main app
@@ -12514,17 +13068,18 @@ initializeData() {
                 
                 // Initialize the application with a small delay to ensure DOM is ready
                 setTimeout(() => {
-                    app = new VietnamesePhuocIT();
+                    app = new VietnameseMayTinhBK();
                     window.app = app; // Make app globally accessible
                     // Force setup navigation again to ensure it works
                     setTimeout(() => {
                         if (app) {
                             app.setupNavigation();
+                            app.applyUserPermissions();
                             console.log('Navigation re-setup completed');
                             console.log('App is now available globally as window.app');
                         }
                     }, 200);
-                    showNotification('Đăng nhập thành công! Chào mừng Admin', 'success');
+                    showNotification(`Đăng nhập thành công! Chào mừng ${authenticatedUser.fullName} (${authenticatedUser.role})`, 'success');
                 }, 100);
             } else {
                 // Show error message
@@ -12542,6 +13097,7 @@ initializeData() {
                 document.getElementById('appContainer').style.display = 'none';
                 // Show login screen
                 document.getElementById('loginScreen').style.display = 'flex';
+                window.currentSessionUser = null;
                 
                 // Clear form
                 document.getElementById('username').value = '';
@@ -12580,16 +13136,16 @@ initializeData() {
             const overlay = document.getElementById('mobileOverlay');
             
             if (sidebar && overlay) {
-                const isOpen = sidebar.classList.contains('mobile-open');
+                const isOpen = sidebar.classList.contains('open');
                 
                 if (isOpen) {
                     // Close menu
-                    sidebar.classList.remove('mobile-open');
-                    overlay.classList.remove('active');
+                    sidebar.classList.remove('open');
+                    overlay.classList.remove('show');
                 } else {
                     // Open menu
-                    sidebar.classList.add('mobile-open');
-                    overlay.classList.add('active');
+                    sidebar.classList.add('open');
+                    overlay.classList.add('show');
                 }
             }
         }
@@ -12603,8 +13159,8 @@ initializeData() {
                     const sidebar = document.getElementById('sidebar');
                     const overlay = document.getElementById('mobileOverlay');
                     if (sidebar && overlay) {
-                        sidebar.classList.remove('mobile-open');
-                        overlay.classList.remove('active');
+                        sidebar.classList.remove('open');
+                        overlay.classList.remove('show');
                     }
                 });
             });
@@ -12617,8 +13173,8 @@ initializeData() {
                 // Close mobile menu on larger screens
                 if (window.innerWidth > 768) {
                     if (sidebar && overlay) {
-                        sidebar.classList.remove('mobile-open');
-                        overlay.classList.remove('active');
+                        sidebar.classList.remove('open');
+                        overlay.classList.remove('show');
                     }
                 }
             });

@@ -1,0 +1,19 @@
+{
+  "name": "qlbh-backend",
+  "version": "1.0.0",
+  "description": "Backend API for QLBH remote database sync",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "check": "node --check src/server.js && node --check src/db.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "mysql2": "^3.11.3",
+    "pg": "^8.13.1"
+  }
+}
