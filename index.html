@@ -542,13 +542,51 @@
                 return `${baseUrl}/health`;
             }
 
+            getRemoteDataEndpointCandidates(rawUrl) {
+                const baseUrl = this.normalizeApiBaseUrl(rawUrl);
+                if (!baseUrl) return [];
+
+                const candidates = [this.buildRemoteDataEndpoint(baseUrl)];
+                const withoutDataSuffix = baseUrl.replace(/\/maytinhbk\/data$/i, '');
+
+                if (/\/api$/i.test(withoutDataSuffix)) {
+                    candidates.push(this.buildRemoteDataEndpoint(withoutDataSuffix.replace(/\/api$/i, '')));
+                } else {
+                    candidates.push(this.buildRemoteDataEndpoint(`${withoutDataSuffix}/api`));
+                }
+
+                return [...new Set(candidates.filter(Boolean))];
+            }
+
+            async fetchRemoteWithFallback(rawUrl, init) {
+                const endpoints = this.getRemoteDataEndpointCandidates(rawUrl);
+                let lastError = null;
+
+                for (const endpoint of endpoints) {
+                    try {
+                        const response = await fetch(endpoint, init);
+                        if (!response.ok) {
+                            const error = new Error(`HTTP ${response.status}`);
+                            error.status = response.status;
+                            error.endpoint = endpoint;
+                            throw error;
+                        }
+                        return { response, endpoint };
+                    } catch (error) {
+                        error.endpoint = error.endpoint || endpoint;
+                        lastError = error;
+                    }
+                }
+
+                throw lastError || new Error('Không thể kết nối endpoint DB thật');
+            }
+
             async syncFromRemoteDatabase() {
                 const config = this.getRemoteDbConfig();
                 if (!config.enabled || !config.apiUrl) return;
-                const dataEndpoint = this.buildRemoteDataEndpoint(config.apiUrl);
 
                 try {
-                    const response = await fetch(dataEndpoint, {
+                    const { response, endpoint } = await this.fetchRemoteWithFallback(config.apiUrl, {
                         method: 'GET',
                         headers: this.getRemoteDbHeaders()
                     });
@@ -567,6 +605,7 @@
                         localStorage.setItem('maytinhbk_data', JSON.stringify(this.demoData));
                         this.migrateProductData();
                         this.loadPage(this.currentPage || 'dashboard');
+                        console.info('Remote sync endpoint:', endpoint);
                         this.showNotification('Đã đồng bộ dữ liệu từ database thật', 'success');
                     }
                 } catch (error) {
@@ -591,10 +630,9 @@
             async pushDataToRemoteDatabase() {
                 const config = this.getRemoteDbConfig();
                 if (!config.enabled || !config.apiUrl) return;
-                const dataEndpoint = this.buildRemoteDataEndpoint(config.apiUrl);
 
                 try {
-                    const response = await fetch(dataEndpoint, {
+                    await this.fetchRemoteWithFallback(config.apiUrl, {
                         method: 'PUT',
                         headers: this.getRemoteDbHeaders(),
                         body: JSON.stringify({
@@ -602,10 +640,6 @@
                             updatedAt: this.getVietnamTime().toISOString()
                         })
                     });
-
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
-                    }
                 } catch (error) {
                     console.error('Remote save failed:', error);
                 }
@@ -4451,7 +4485,8 @@
                                     </div>
                                     <div style="font-size: 12px; color: #6b7280;">
                                         Endpoint yêu cầu:
-                                        <code>GET/PUT {API_URL}/maytinhbk/data</code>
+                                        <code>GET/PUT {API_URL}/maytinhbk/data</code><br>
+                                        Có thể nhập base URL (`https://domain` hoặc `https://domain/api`), hệ thống sẽ tự thử route phù hợp.
                                     </div>
                                 </div>
                             </div>
@@ -5873,27 +5908,22 @@
                 }
 
                 try {
-                    const dataEndpoint = this.buildRemoteDataEndpoint(config.apiUrl);
                     const healthEndpoint = this.buildRemoteHealthEndpoint(config.apiUrl);
-                    const response = await fetch(dataEndpoint, {
+                    const { endpoint } = await this.fetchRemoteWithFallback(config.apiUrl, {
                         method: 'GET',
                         headers: this.getRemoteDbHeaders()
                     });
 
-                    if (!response.ok) {
-                        let reason = `HTTP ${response.status}`;
-                        if (response.status === 401) {
-                            reason = 'TOKEN không hợp lệ hoặc thiếu Authorization Bearer token';
-                        } else if (response.status === 404) {
-                            reason = 'Sai URL API hoặc reverse proxy chưa route tới /maytinhbk/data';
-                        }
-                        throw new Error(reason);
-                    }
-
-                    this.showNotification(`Kết nối DB thật thành công (${dataEndpoint})`, 'success');
+                    this.showNotification(`Kết nối DB thật thành công (${endpoint})`, 'success');
                 } catch (error) {
                     console.error('Test remote DB failed:', error);
-                    this.showNotification(`Kết nối thất bại: ${error.message}`, 'error');
+                    let reason = error.message || 'Lỗi không xác định';
+                    if (error.status === 401) {
+                        reason = 'TOKEN không hợp lệ hoặc thiếu Authorization Bearer token';
+                    } else if (error.status === 404) {
+                        reason = `Sai URL API hoặc reverse proxy chưa route. Endpoint thử cuối: ${error.endpoint || 'N/A'}`;
+                    }
+                    this.showNotification(`Kết nối thất bại: ${reason}`, 'error');
                     const fallbackHint = config.apiUrl.includes('/api')
                         ? `Gợi ý: thử ${this.normalizeApiBaseUrl(config.apiUrl).replace(/\/api$/i, '')} nếu reverse proxy chưa map /api`
                         : `Gợi ý: thử kiểm tra ${healthEndpoint}`;
