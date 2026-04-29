@@ -7,13 +7,20 @@ const { createDbClient } = require('./db');
 const app = express();
 const port = Number(process.env.PORT || 3000);
 const apiToken = (process.env.API_TOKEN || '').trim();
+const allowedOrigin = (process.env.CORS_ORIGIN || '*').trim();
 
 const db = createDbClient();
 
-app.use(cors());
+app.use(cors({
+  origin: allowedOrigin === '*' ? true : allowedOrigin,
+  methods: ['GET', 'PUT', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.options('*', cors());
 app.use(express.json({ limit: '10mb' }));
 
 app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
   if (!apiToken) return next();
 
   const auth = req.headers.authorization || '';

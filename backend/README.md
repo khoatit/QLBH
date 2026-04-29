@@ -116,6 +116,7 @@ Trong `.env`:
 - `DB_CLIENT=postgres` hoặc `DB_CLIENT=mysql`
 - Điền thông tin kết nối tương ứng.
 - `API_TOKEN` (optional): nếu có, frontend phải gửi `Authorization: Bearer <token>`.
+- `CORS_ORIGIN` (optional): domain frontend được phép gọi API. Mặc định `*`. Ví dụ production nên đặt `https://app.maytinhbk.vn`.
 
 ## 3) Chạy server
 
@@ -138,3 +139,16 @@ Sau đó bấm **Kiểm tra kết nối** và **Đồng bộ ngay**.
 ## Ghi chú schema
 
 Backend tự tạo bảng `app_data` và lưu toàn bộ dữ liệu app trong 1 record `id = 1` dạng JSON/JSONB.
+
+## Lỗi thường gặp: frontend báo sai URL/TOKEN nhưng backend vẫn sống
+
+- Nếu frontend chạy khác domain backend và bạn có dùng `API_TOKEN`, trình duyệt sẽ gửi preflight `OPTIONS`.
+- Bản backend hiện tại đã xử lý `OPTIONS` + header `Authorization`; chỉ cần đảm bảo reverse proxy không chặn `OPTIONS`.
+- Test nhanh trên server:
+
+```bash
+curl -i -X OPTIONS https://your-domain/maytinhbk/data \
+  -H "Origin: https://app.maytinhbk.vn" \
+  -H "Access-Control-Request-Method: GET" \
+  -H "Access-Control-Request-Headers: authorization,content-type"
+```
