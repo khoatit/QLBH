@@ -156,3 +156,48 @@ curl -i -X OPTIONS https://your-domain/maytinhbk/data \
   -H "Access-Control-Request-Method: GET" \
   -H "Access-Control-Request-Headers: authorization,content-type"
 ```
+
+## Lỗi 502 tại `/api/*` (Cloudflare/aaPanel): checklist xử lý dứt điểm
+
+Nếu vào `https://app.maytinhbk.vn/api/` thấy **Bad gateway 502**, đây là lỗi upstream backend chưa chạy hoặc proxy map sai (không phải lỗi frontend).
+
+### 1) SSH vào server và chạy backend bằng PM2
+
+```bash
+cd /path/to/QLBH/backend
+npm install --omit=dev
+cp -n .env.example .env
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 status
+pm2 logs qlbh-backend --lines 100
+```
+
+### 2) Test local trực tiếp trên server (bỏ qua Cloudflare)
+
+```bash
+curl -i http://127.0.0.1:3000/health
+curl -i http://127.0.0.1:3000/api/health
+curl -i http://127.0.0.1:3000/maytinhbk/data
+curl -i http://127.0.0.1:3000/api/maytinhbk/data
+```
+
+### 3) Proxy đúng trong aaPanel/Nginx
+
+- `/api/` phải reverse proxy tới `http://127.0.0.1:3000/`
+- Bật chuyển tiếp header `Authorization`
+- Cho phép method `OPTIONS` (preflight)
+
+Ví dụ nhanh:
+
+```nginx
+location /api/ {
+    proxy_pass http://127.0.0.1:3000/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Authorization $http_authorization;
+}
+```
