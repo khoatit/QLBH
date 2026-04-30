@@ -4,6 +4,7 @@ Backend mẫu để chạy với contract frontend đã thêm:
 
 - `GET /maytinhbk/data`
 - `PUT /maytinhbk/data` với body: `{ "data": { ... } }`
+- Tương thích thêm prefix reverse-proxy: `GET/PUT /api/maytinhbk/data`
 
 ---
 
@@ -125,6 +126,9 @@ npm run start
 ```
 
 Server mặc định chạy ở `http://localhost:3000`.
+Backend hỗ trợ cả 2 route health:
+- `GET /health`
+- `GET /api/health`
 
 ## 4) Kết nối frontend
 

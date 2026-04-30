@@ -5,6 +5,7 @@ const cors = require('cors');
 const { createDbClient } = require('./db');
 
 const app = express();
+const apiRouter = express.Router();
 const port = Number(process.env.PORT || 3000);
 const apiToken = (process.env.API_TOKEN || '').trim();
 const allowedOrigin = (process.env.CORS_ORIGIN || '*').trim();
@@ -31,7 +32,7 @@ app.use((req, res, next) => {
   return res.status(401).json({ message: 'Unauthorized' });
 });
 
-app.get('/health', async (_req, res) => {
+apiRouter.get('/health', async (_req, res) => {
   try {
     await db.ping();
     return res.json({ ok: true, db: db.client });
@@ -40,7 +41,7 @@ app.get('/health', async (_req, res) => {
   }
 });
 
-app.get('/maytinhbk/data', async (_req, res) => {
+apiRouter.get('/maytinhbk/data', async (_req, res) => {
   try {
     const payload = await db.getData();
     return res.json({ data: payload.data, updatedAt: payload.updatedAt });
@@ -49,7 +50,7 @@ app.get('/maytinhbk/data', async (_req, res) => {
   }
 });
 
-app.put('/maytinhbk/data', async (req, res) => {
+apiRouter.put('/maytinhbk/data', async (req, res) => {
   const data = req.body?.data;
 
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
@@ -63,6 +64,9 @@ app.put('/maytinhbk/data', async (req, res) => {
     return res.status(500).json({ message: 'Cannot save data', error: error.message });
   }
 });
+
+app.use('/', apiRouter);
+app.use('/api', apiRouter);
 
 async function start() {
   try {

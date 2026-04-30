@@ -5922,6 +5922,8 @@
                         reason = 'TOKEN không hợp lệ hoặc thiếu Authorization Bearer token';
                     } else if (error.status === 404) {
                         reason = `Sai URL API hoặc reverse proxy chưa route. Endpoint thử cuối: ${error.endpoint || 'N/A'}`;
+                    } else if (error.status === 502 || error.status === 503 || error.status === 504) {
+                        reason = `Backend không chạy hoặc reverse proxy upstream lỗi (${error.status}). Endpoint thử cuối: ${error.endpoint || 'N/A'}`;
                     }
                     this.showNotification(`Kết nối thất bại: ${reason}`, 'error');
                     const fallbackHint = config.apiUrl.includes('/api')
