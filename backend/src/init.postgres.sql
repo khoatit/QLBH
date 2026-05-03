@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS app_data (
+  id SMALLINT PRIMARY KEY,
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO app_data (id, data)
+VALUES (1, '{}'::jsonb)
+ON CONFLICT (id) DO NOTHING;
